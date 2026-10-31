@@ -6,8 +6,10 @@ for transport and **Media3 ExoPlayer1.11.1** for extraction, codecs and timing.
 A **custom TCP** compatibility path uses MediaCodec and AudioTrack directly.
 These are independent applications, not official scrcpy applications.
 
-The Android application ID remains `org.screencopy.receiver`. Display names do
-not change `SCPY` framing, protocol version **3**, session IDs or track generations.
+The Android application ID is `org.screencopy.receiver`. The on-wire
+`SCPY` framing uses **wire protocol version 3**, a compatibility discriminator
+separate from application release versions. Session IDs and track generations
+identify internal resources.
 
 ## Architecture and supported formats
 
@@ -36,7 +38,7 @@ not trusted identities. The sender selects the actual UDP-source IP/TCP port,
 not an advertised redirect or matching name. Do not expose the listener to the
 internet or assume protection against LAN observers or spoofed discovery.
 
-Both applications must implement protocol **v3**. Positive internal session
+Both applications must implement **wire protocol version 3**. Positive internal session
 IDs, track generations and readiness checks are mandatory. One cast is admitted;
 another receives `BUSY`. UDP discovery uses port **27183**, and the default
 control TCP listener uses **27184**. Wi-Fi/AP client isolation may block
@@ -126,7 +128,7 @@ never automatic uninstall/reinstallation. See [UPDATES.md](UPDATES.md).
 
 CI supplies `releaseVersionCode=10000+github.run_number` and a version name
 from the stable tag without `v`, or `dev-<short-sha>` for main. Local defaults
-remain versionCode1/versionName0.1.0. Preserve run-number continuity or choose
+are versionCode1/versionName0.1.0. Preserve run-number continuity or choose
 a higher offset than installed versions when replacing a workflow/repository.
 
 Stable tags are `vMAJOR.MINOR.PATCH`. Main prereleases additionally require

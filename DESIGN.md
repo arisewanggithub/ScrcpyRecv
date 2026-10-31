@@ -1,8 +1,9 @@
 # ScrcpyRecv architecture
 
 ScrcpyRecv accepts one Android screen/audio cast from ScrcpySend on a trusted
-LAN. The application ID remains `org.screencopy.receiver`; display names do
-not change `SCPY` framing or protocol3. Wire schemas/resource bounds are in
+LAN. The application ID `org.screencopy.receiver` and `SCPY` framing are stable
+compatibility identifiers. Wire protocol version 3 is separate from app release
+versions. Wire schemas/resource bounds are in
 [PROTOCOL.md](PROTOCOL.md); setup/build/release instructions are in
 [README.md](README.md).
 
@@ -23,7 +24,7 @@ clients on an untrusted network.
 ## SRT / fragmented MP4 pipeline
 
 ```text
-v3 control / explicit SRT SESSION_ACCEPT / actual peer and session
+wire protocol version 3 control / explicit SRT SESSION_ACCEPT / actual peer and session
   -> libsrt1.5.7 cancellable caller
   -> unseekable, uncached Media3 DataSource
   -> FragmentedMp4Extractor / standard fMP4 metadata
@@ -57,7 +58,7 @@ monitor waits synchronously for main-thread cleanup.
 ## Custom TCP compatibility pipeline
 
 ```text
-v3 listener / bounded framing / explicit stream configuration and readiness
+wire protocol version 3 listener / bounded framing / explicit stream configuration and readiness
   -> video generation queue -> MediaCodec -> Surface
   -> audio generation queue -> Opus/AAC/PCM decode -> AudioTrack
   -> bounded audio presentation clock / video presentation

@@ -1,12 +1,13 @@
-# ScrcpySend / ScrcpyRecv protocol v3 (trusted family LAN, IP/name selection)
+# ScrcpySend / ScrcpyRecv wire protocol
 
-Current v3 interoperability contract. **Incompatible with v1/v2.**
-ScreenCopy uses plain TCP: no TLS, authentication, QR, permanent peer identity,
+Framing version field: **3**. This is a protocol compatibility discriminator,
+separate from application release versions.
+ScrcpySend / ScrcpyRecv use plain TCP control: no TLS, authentication, QR, permanent peer identity,
 credential issuance, saved trust or revocation. Anyone on the LAN can observe or
 forge discovery/session/media traffic. Use ONLY a trusted private family LAN.
 No human session code, pairing code, peer credential or comparison confirmation
 exists. Internal cast session IDs, message error `code` fields, track IDs and
-generations are unchanged. Sender capture may use Shizuku; receiver has no
+generations identify internal resources. Sender capture uses Shizuku; receiver has no
 dependency on sender's privileged backend.
 
 ## Listener selection and discovery
@@ -33,9 +34,9 @@ Discovered expiry/unavailable state is reported; never silently redirect to a
 different IP/port merely because its name matches. Actual connection and BUSY
 responses remain authoritative; manual endpoints may lack discovery entirely.
 Do not persist peer selection or inferred acceptance. Capture settings persist.
-Unknown JSON fields (including obsolete human `code`/`sessionCode` fields in a
-v3 HELLO/discovery object) are IGNORED, never interpreted/validated as identity.
-Actual v1/v2 wire/discovery versions are incompatible and rejected/ignored.
+Unknown JSON fields (including human `code`/`sessionCode` fields in a
+HELLO/discovery object) are IGNORED, never interpreted/validated as identity.
+Wire/discovery versions must be 3; other values are rejected/ignored.
 
 ## Connection and session setup
 
@@ -44,7 +45,7 @@ TLS autodetection. One bidirectional connection/one session. Sender connects and
 sends HELLO first, session/track/generation0, PTS-1:
 
 ```json
-{"role":"sender","versions":[3],"name":"ScreenCopy Sender"}
+{"role":"sender","versions":[3],"name":"ScrcpySend"}
 ```
 
 Receiver validates role/version/name and returns HELLO session0:
@@ -53,7 +54,7 @@ Receiver validates role/version/name and returns HELLO session0:
 {"role":"receiver","versions":[3],"name":"Living room"}
 ```
 
-Sender requires v3/role/name (1..80 chars). This is protocol setup, not
+Sender requires wire protocol version 3/role/name (1..80 chars). This is protocol setup, not
 authentication. Then sender SESSION_REQUEST uses a new random positive
 signed64 session ID and requested settings JSON below. No AUTH message exists:
 type2 is RESERVED and MUST reject before payload allocation. Receiver checks
@@ -63,9 +64,8 @@ UNSUPPORTED_CONFIG, with matching session. Receiver can reply REJECT BUSY at
 HELLO/session0 too. Capture starts ONLY
 after SESSION_ACCEPT. Enabled audio cannot silently disappear.
 
-Old v1/v2 headers fail VERSION immediately. TLS ClientHello fails magic immediately.
-Do not wait for a complete40-byte header to reject invalid magic/version. Old
-clients may expose TLS handshake failure, not connect successfully. Setup and
+Incorrect version fields fail VERSION immediately. TLS ClientHello fails magic immediately.
+Do not wait for a complete40-byte header to reject invalid magic/version. Setup and
 individual startup phases10s overall (trickled reads do not extend); writer10s.
 
 ## SRT fragmented MP4 media transport
@@ -97,7 +97,7 @@ The receiver validates the descriptor, session and requested codecs before
 Malformed, unsupported, unavailable or mismatched SRT requests are rejected with
 UNSUPPORTED_CONFIG, never reinterpreted as custom TCP. A present descriptor
 with any unsupported kind is likewise rejected.
-The absent `mediaTransport` field alone selects custom TCP. No version bump.
+The absent `mediaTransport` field alone selects custom TCP.
 The receiver then connects as SRT caller. Capture still starts ONLY after
 the user's Play and SESSION_ACCEPT; no automatic retry or new capture.
 
@@ -126,8 +126,8 @@ bridge uses official HEVC SPS/profile metadata to announce actual CSD/dimensions
 before the unchanged access unit. Missing/inconsistent parameters or non-IRAP
 activation fail explicitly. Raw PTS, key flags, FIFO, audio and the SRT connection
 remain intact; no repeated moov, invented CSD/keys, clock reset or capture Stop.
-Update both applications together; v3 remains unchanged. Hardware rotation/
-decoder adaptation still requires validation. Real H.265 display-capture/
+Both applications must support this configuration handling. Hardware rotation/
+decoder adaptation requires validation. Real H.265 display-capture/
 Stop/recast safety remains unverified because kernel-panic risk has been reported.
 
 AAC uses standard `mp4a`/`esds` from actual stereo 48 kHz AAC-LC
@@ -142,8 +142,8 @@ dimension changes are explicitly unsupported; this is not AVC rotation.
 Encoder inventory and exact geometry/FPS/bitrate preflight must succeed;
 receiver platform decoder availability is checked before SESSION_ACCEPT.
 Unavailable codec returns UNSUPPORTED_CONFIG before capture, never a substitution.
-HEVC/AAC/AV1 standard-container support is not a hardware playback validation claim:
-explicit synthetic renderer/audio-position probes are still required.
+HEVC/AAC/AV1 standard-container support does not establish device-specific hardware
+playback. Validate decoder and audio readiness on the target hardware.
 
 One shared timestamp origin preserves initial A/V source offsets. Video keeps
 source presentation timestamps. Opus FIFO/payloads, pre-skip and gain are
@@ -163,10 +163,10 @@ IDR sample. Default Media3 renderers handle codec adaptation/reinitialization;
 AV1 OBUs bypass all AVC NAL parsing, retaining payload/encoder key flags.
 Extracted track MIME must match the accepted selection; AAC ASC must match
 its sample entry rate/channel metadata. Audio-off forbids an audio track.
-no decoder backend, audio clock, timestamp or user capture setting is replaced.
+No decoder backend, audio clock, timestamp or user capture setting is replaced.
 Actual decoder video-size callbacks update receiver Surface aspect/diagnostics.
-This configuration handling keeps v3 framing; rebuild/release both apps
-together because a v3 version match alone does not prove rotation support.
+Both applications must support this configuration handling; a wire protocol
+version match alone does not establish decoder rotation support.
 No first-party AudioPlayer/VideoPlayer/PlaybackClock is used for this path.
 Only after a real rendered first video frame AND position advancement of enabled
 audio does the receiver send
@@ -187,7 +187,7 @@ after one second without write progress. Native close must unblock accept,
 connect, read and backpressured write without detached workers.
 `protocol/fixtures/srt-fmp4.json` is the canonical paired SRT fixture.
 
-## TCP binary framing (unchanged for all control paths)
+## TCP binary framing (all control paths)
 
 Exactly40-byte header, big endian:
 
@@ -205,7 +205,7 @@ Exactly40-byte header, big endian:
 
 Types:1 HELLO, **2 reserved/reject**,3 SESSION_REQUEST,4 SESSION_ACCEPT,5 REJECT,
 6 STREAM_CONFIG,7 STREAM_READY,8 VIDEO_FRAME,9 AUDIO_PACKET,10 STATUS,11 ERROR,
-12 PING,13 PONG,14 STOP,15 SESSION_END. Directions/responsibilities unchanged:
+12 PING,13 PONG,14 STOP,15 SESSION_END. Directions/responsibilities:
 sender sends REQUEST/CONFIG/media, receiver sends ACCEPT/REJECT/READY; other
 status/liveness/stop messages bidirectional. Only CONFIG/READY/media have
 nonzero track/generation AND require session>0. Video track1; audio track2.
@@ -246,7 +246,7 @@ Optional top-level `receiverOrientation` is exactly one of the case-sensitive
 strings `auto`, `landscape`, `portrait`; absent means `auto`. Present null,
 non-string or any other value is invalid requested configuration and is rejected
 with `UNSUPPORTED_CONFIG`. Senders emit the selected value, including `auto`.
-This is a compatible optional v3 extension; no framing/version bump.
+This optional field uses wire protocol version 3.
 
 The field controls only the receiver's presentation orientation for that accepted
 session. `auto` leaves the receiver's normal automatic presentation policy;
@@ -321,10 +321,9 @@ Receiver maps source observations against increasing decoded sample positions
 to monotonic presentation, audio master when enabled; preserve initial A/V
 offsets and apply preSkip once per generation. No B-frame reordering.
 
-This Opus compatibility correction keeps v3 framing and configuration schema
-unchanged and adds no capability field. Earlier v3 builds reject reversed Opus
-PTS; release sender and receiver together. A v3 version match alone does not
-prove support for this corrected behavior. `protocol/fixtures/opus-pts-order.json`
+Both applications must preserve Opus source order and accept nonnegative PTS
+reversals. A wire protocol version match alone does not establish this behavior.
+`protocol/fixtures/opus-pts-order.json`
 is the shared source-order acceptance fixture.
 
 ## Liveness, stop, errors, bounds
@@ -340,7 +339,7 @@ STATUS `{"state":"Streaming","message":"..."}` diagnostic.
 ERROR `{"code":"AUDIO_FAILED","message":"...","fatal":true}` terminal if fatal.
 REJECT always terminal. Codes VERSION, BUSY, UNSUPPORTED_CONFIG,
 PROTOCOL, CAPTURE_FAILED, AUDIO_FAILED, DECODER_FAILED, TIMEOUT, CONGESTION, INTERNAL.
-AUTH_FAILED is not a v3 error code. No remote phone input/control.
+AUTH_FAILED is not a wire protocol version 3 error code. No remote phone input/control.
 
 Sender aggregate media<=8MiB AND<=500ms PTS span/track, encoded receiver same
 maximum (stricter allowed if explicit CONGESTION).
@@ -354,8 +353,8 @@ All streams, threads, guardian and capture resources cleaned on stop/error.
 
 ## Fixtures
 
-`protocol/fixtures/v3.json`: deterministic exact framing cases, includes old-v1/v2,
-reserved-AUTH, malformed and valid frames. `discovery.json`, `session.json`
+`protocol/fixtures/v3.json`: deterministic exact framing cases, including invalid
+versions 1/2, reserved type 2 (AUTH), malformed and valid frames. `discovery.json`, `session.json`
 test source-address/code-free HELLO/internal-session shapes; `opus-head.hex` and
-`track-lifecycle.json` retain initialization/readiness/generation examples.
+`track-lifecycle.json` provide initialization/readiness/generation examples.
 Synthetic media/config fixtures are framing/schema tests, not playable content.
