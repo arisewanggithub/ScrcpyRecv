@@ -38,35 +38,40 @@ Assert ($mainManifest -notmatch 'UpdateTestActivity' -and $debugManifest -match 
 Assert ($workflow -match ':app:assembleRelease -PsrtTrial=\$\{\{ matrix.srt \}\} -PrequireReleaseSigning=false') 'Both profiles need unsigned optimized release compilation before publication'
 Assert ($workflow -match 'path: app/build/outputs/mapping/release/mapping.txt') 'Exact signed-release mapping must be retained outside public release assets'
 Assert ($appBuild -match 'gradleProperty\("releaseSmokeTest"\).map \{ it.toBooleanStrict\(\) \}' -and $appBuild -match '!releaseSmokeTest \|\| \(!requireReleaseSigning && !productionSigningConfigured\)') 'Strict smoke/publication signing exclusion missing'
-Assert ($appBuild -match 'testBuildType = "release"' -and $appBuild -match 'signingConfig = signingConfigs.getByName\("debug"\)') 'Explicit release test signing configuration missing'
+Assert ($appBuild -match 'signingConfig = signingConfigs.getByName\("debug"\)') 'Explicit release test signing configuration missing'
 Assert ($releaseBlock.Groups['body'].Value -match 'isDebuggable = false') 'Optimized release must not become debuggable'
-Assert ($appBuild -match 'sourceSets\["androidTest"\].java.setSrcDirs' -and $appBuild -match 'src/releaseSmokeTest/java' -and $appBuild -match 'NativeSrtTransportTest.kt' -and $appBuild -match 'OpusDecoderTest.kt') 'Safe release smoke source cohort missing'
-Assert ($appBuild -match 'sourceSets\["androidTest"\].java.setSrcDirs\(smokeSourceDirectories\)' -and $appBuild -match 'sourceSets\["androidTest"\].kotlin.setSrcDirs\(smokeSourceDirectories\)') 'Both independent AGP Java and Kotlin roots must replace their androidTest defaults'
-Assert ($appBuild -match 'from\(originalSmokeTestFiles\)\s*\{' -and $appBuild -match 'it.name != "prepareReleaseSmokeSources"' -and $appBuild -match 'val originalSmokeTestFiles = listOf\(') 'Smoke Sync must use one original-file list source argument and exclude itself from consumer dependencies'
-Assert ($appBuild -match 'androidTestImplementation\("com.google.errorprone:error_prone_annotations:2.41.0"\)') 'Instrumentation R8 needs the pinned AndroidX Test annotation dependency'
+Assert ($appBuild -notmatch 'testBuildType|prepareReleaseSmokeSources|src/releaseSmokeTest|testProguardFiles') 'App AndroidTest must remain the ordinary debug cohort'
+$module = Get-Content (Join-Path $root 'release-check/build.gradle.kts') -Raw
+Assert ($module -match 'id\("com.android.test"\)' -and $module -match 'self-instrumenting"\] = true') 'Standalone self-instrumenting harness required'
+Assert ($module -match 'targetProjectPath = ":app"' -and $module -notmatch '(implementation|api|compileOnly)\(project') 'Harness must consume only the target APK, never app code'
+Assert ($module -match 'isMinifyEnabled = true' -and $module -match 'isDebuggable = false') 'Harness must independently optimize its own runtime'
+Assert ($module -match 'testProguardFiles\(getDefaultProguardFile\("proguard-android-optimize.txt"\), "proguard-rules.pro"\)') 'Standalone TestCreationConfig must register optimize defaults/custom metadata and entry rules through testProguardFiles'
+Assert ($module -notmatch '(?m)^\s+proguardFiles\b') 'Ordinary proguardFiles are ignored by standalone test R8'
+Assert ($module -match 'implementation\("com.google.errorprone:error_prone_annotations:2.41.0"\)') 'Harness annotation pin missing'
 Assert ($appBuild -notmatch '(?m)^\s*(implementation|api|compileOnly)\("com.google.errorprone:') 'Error Prone annotation fix must remain test-only'
-$testRules = Get-Content (Join-Path $root 'app/release-smoke-test-rules.pro') -Raw
+$testRules = Get-Content (Join-Path $root 'release-check/proguard-rules.pro') -Raw
 $testWarnings = @([regex]::Matches($testRules, '(?m)^-dontwarn ([^\r\n]+)') | ForEach-Object { $_.Groups[1].Value.Trim() })
 Assert (($testWarnings -join ',') -ceq 'javax.lang.model.element.Modifier') 'Only Error Prone compiler metadata may suppress this exact missing test-only enum'
 Assert ($rules -notmatch 'javax.lang.model') 'Compiler model suppression must never affect production R8'
-Assert ($appBuild -match 'testProguardFiles\("release-smoke-test-rules.pro"\)') 'Compiler metadata rule must apply only to the test APK'
-Assert ($appBuild -notmatch 'from\(file\([^;]*?\)\s*\{' -and $appBuild -notmatch 'from\(sourceSets') 'Smoke Sync must not treat a configure closure/generated source set as a lazy task source'
+Assert ($testRules -match '(?m)^-repackageclasses dev.scrcpy.releasecheck.internal' -and $rules -notmatch 'keep[^\r\n]*kotlin') 'Harness runtime must be isolated without production Kotlin keeps'
 Assert ($workflow -match '-PrequireReleaseSigning=true -PreleaseSmokeTest=false') 'Publisher must explicitly disable smoke signing'
 $smokeScript = Get-Content (Join-Path $PSScriptRoot 'run-release-smoke.sh') -Raw
-Assert ($smokeScript -match 'NativeSrtTransportTest,org.screencopy.receiver.media.OpusDecoderTest,org.screencopy.receiver.ReleaseRuntimeSmokeTest' -and $smokeScript -notmatch 'AppUpdateRemoteUiTest|connectedAndroidTest') 'Release smoke must select only the approved safe tests'
-Assert ($smokeScript -match 'INSTRUMENTATION_STATUS_CODE: -\[234\]' -and $smokeScript -match 'expected=8') 'Smoke tests must reject skips and enforce their executed count'
+Assert ($smokeScript -match 'NativeSrtCheck,dev.scrcpy.releasecheck.NativeOpusCheck,dev.scrcpy.releasecheck.TargetResourcesCheck' -and $smokeScript -notmatch 'AppUpdateRemoteUiTest|connectedAndroidTest') 'Release smoke must select only standalone checks'
+Assert ($smokeScript -match 'INSTRUMENTATION_STATUS_CODE: -\[234\]' -and $smokeScript -match 'expected=6') 'Smoke tests must reject skips and enforce their executed count'
 $smokeTestCount = 0
-foreach ($path in @('app/src/androidTest/java/org/screencopy/receiver/media/NativeSrtTransportTest.kt',
-    'app/src/androidTest/java/org/screencopy/receiver/media/OpusDecoderTest.kt',
-    'app/src/releaseSmokeTest/java/org/screencopy/receiver/ReleaseRuntimeSmokeTest.kt')) {
-    $smokeTestCount += [regex]::Matches((Get-Content (Join-Path $root $path) -Raw), '@Test\s+fun\s+').Count
+foreach ($file in (Get-ChildItem (Join-Path $root 'release-check/src/main') -Recurse -File -Filter '*.kt')) {
+    $content = Get-Content $file.FullName -Raw
+    Assert ($content -notmatch 'import (dev\.screencopy\.sender|org\.screencopy\.receiver|org\.conscrypt|org\.bouncycastle|io\.github\.muntashirakon)') 'Harness must reflect target code, never compile app implementation'
+    $smokeTestCount += [regex]::Matches($content, '@Test\s+fun\s+').Count
 }
-Assert ($smokeTestCount -eq 8) 'Release smoke expected count must match its exact source cohort'
-$runner = Get-Content (Join-Path $root 'app/src/releaseSmokeTest/java/dev/scrcpy/smoke/ReleaseSmokeRunner.kt') -Raw
-Assert ($runner -match 'releaseSmoke' -and $runner -match 'Build.VERSION.SDK_INT == 35' -and $runner -match 'FLAG_DEBUGGABLE') 'Emulator/test-intent/non-debuggable runtime guard missing'
+Assert ($smokeTestCount -eq 6) 'Standalone Receiver cohort must have exactly six tests'
+$runner = Get-Content (Join-Path $root 'release-check/src/main/java/dev/scrcpy/releasecheck/ReleaseCheckRunner.kt') -Raw
+$target = Get-Content (Join-Path $root 'release-check/src/main/java/dev/scrcpy/releasecheck/TargetApp.kt') -Raw
+Assert ($runner -match 'releaseSmoke' -and $runner -match 'Build.VERSION.SDK_INT == 35' -and $target -match 'FLAG_DEBUGGABLE' -and $target -match 'loader !== harness.classLoader') 'Independent target loader and emulator/non-debuggable guards required'
 & (Join-Path $PSScriptRoot 'verify-release-smoke-apks.ps1') -SelfTest
 $smokeJob = [regex]::Match($workflow, '(?ms)^  optimized-native-smoke:.*?(?=^  publish:)').Value
 Assert ($smokeJob -match 'releaseSmokeTest=true' -and $smokeJob -notmatch 'secrets\.|publication\.keystore|release upload') 'Smoke job must not use production signing or publication'
+Assert ($smokeJob -match ':release-check:assembleRelease' -and $smokeJob -notmatch ':app:assembleReleaseAndroidTest') 'Optimized CI must build the standalone APK, not the retired shared-runtime test APK'
 Assert ($workflow -notmatch 'pull_request_target|connectedAndroidTest|adb connect') 'Unsafe CI trigger/device test'
 Assert ($workflow -match "srt: \['false', 'true'\]") 'Both transport build modes must be checked'
 Assert ($workflow -match 'requireReleaseSigning=true') 'Publication signing guard missing'

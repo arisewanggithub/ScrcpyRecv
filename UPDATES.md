@@ -74,32 +74,39 @@ guard configuration; a successful optimized assembly is still required.
 
 The separate `optimized-native-smoke` job uses a disposable Linux API35 x86_64
 emulator and Gradle's runner-generated debug signer only for that test run.
-`releaseSmokeTest=true` selects `testBuildType=release` without enabling app
-debuggability or weakening R8/resource shrinking. Any production signing
+`releaseSmokeTest=true` selects a standalone self-instrumenting test module and
+the app's temporary test signer without enabling app debuggability or weakening
+R8/resource shrinking. Any production signing
 configuration or `requireReleaseSigning=true` conflicts with smoke mode.
 The publisher explicitly uses smoke=false and rebuilds with the user-configured
 permanent signer; smoke APKs, debug keystores and AVD storage are never artifacts.
 
-Only `NativeSrtTransportTest` (five synthetic loopback tests), `OpusDecoderTest`
-(two actual native decode/error tests), and `ReleaseRuntimeSmokeTest` (actual
-Activity/resource launch without starting playback) execute: eight tests total.
+The standalone cohort has **six tests**: three raw native SRT loopback/exact-byte,
+cancel/close/backpressure/stream-ID/stale-handle cases, two actual Opus JNI
+decode/error checks and one actual manifest-resource/launcher check. Target
+classes/native libraries are loaded from the actual installed app package through
+its separate classloader, not compiled or packaged into the harness. CI launches
+the real app process separately without starting playback.
 No capture, installer operation, Shizuku permission grant or physical phone is
 involved. Sender-side BC identity, SPAKE2 and Conscrypt factory/reflection checks
 run in the sender's separate job, not this receiver cohort. Established-socket
 Conscrypt TLS export and actual scrcpy/Shizuku deployment remain outside scope.
 
 CI installs only on its isolated emulator after DEX verification rejects
-duplicate app implementations, unminified crypto/ADB libraries, native wrappers
-in the test APK and release debug fixtures. The runner additionally requires an
+duplicate app implementations, crypto/ADB/native wrapper classes, copied native
+libraries and release debug fixtures. The runner additionally requires an
 explicit `releaseSmoke=true` argument and non-debuggable target. The shell driver
 requires Linux Actions and checks emulator/API35 identity before installation.
 Every selected test must complete successfully; ignored/assumption-skipped tests
 or incomplete execution fail the job. Only result/log/policy files and mappings
 are retained, for seven days.
 
-AGP applies the tested release mapping to instrumentation. This cannot restore
-APIs removed by optimization; compile/runtime failures must be investigated,
-not hidden with whole-package keeps or duplicate unminified test implementations.
+The harness owns an independently optimized/repackaged Kotlin runtime. Supported
+self-instrumenting mode avoids app dependency subtraction and app mapping; no
+production stdlib functions are retained merely for tests. The previous shared
+AndroidTest harness crashed before executing tests and is retired; its former
+eight-test selection is not claimed as successful optimized coverage. Original
+debug instrumentation tests remain distinct higher-level pipeline coverage.
 No real-phone capture/Stop, especially H.265, is part of R8 acceptance.
 Ephemeral signing does not validate an in-place production-signer update.
 

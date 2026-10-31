@@ -88,36 +88,7 @@ android {
         buildTypes.getByName("release").signingConfig = publicationSigning
     }
     if (releaseSmokeTest) {
-        testBuildType = "release"
         buildTypes.getByName("release").signingConfig = signingConfigs.getByName("debug")
-        buildTypes.getByName("release").testProguardFiles("release-smoke-test-rules.pro")
-        defaultConfig.testInstrumentationRunner = "dev.scrcpy.smoke.ReleaseSmokeRunner"
-        val smokeSourceDirectories = listOf(
-            file("src/releaseSmokeTest/java"), file("${layout.buildDirectory.get().asFile}/generated/releaseSmokeTests/java")
-        )
-        sourceSets["androidTest"].java.setSrcDirs(smokeSourceDirectories)
-        // AGP's independent Kotlin defaults include androidTest/java as well.
-        sourceSets["androidTest"].kotlin.setSrcDirs(smokeSourceDirectories)
-    }
-}
-
-if (releaseSmokeTest) {
-    val originalSmokeTestFiles = listOf(
-        file("src/androidTest/java/org/screencopy/receiver/media/NativeSrtTransportTest.kt"),
-        file("src/androidTest/java/org/screencopy/receiver/media/OpusDecoderTest.kt")
-    )
-    val smokeOutputDirectory = file("${layout.buildDirectory.get().asFile}/generated/releaseSmokeTests/java")
-    val selectedSmokeSources = tasks.register<Sync>("prepareReleaseSmokeSources") {
-        from(originalSmokeTestFiles) {
-            into("org/screencopy/receiver/media")
-        }
-        into(smokeOutputDirectory)
-    }
-    tasks.matching {
-        it.name != "prepareReleaseSmokeSources" &&
-            it.name in listOf("preReleaseAndroidTestBuild", "compileReleaseAndroidTestKotlin", "compileReleaseAndroidTestJavaWithJavac")
-    }.configureEach {
-        dependsOn(selectedSmokeSources)
     }
 }
 
@@ -131,6 +102,4 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.16.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    // AndroidX Test monitor's CLASS-retained annotations are absent from its POM.
-    androidTestImplementation("com.google.errorprone:error_prone_annotations:2.41.0")
 }

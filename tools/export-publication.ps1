@@ -4,7 +4,9 @@ $root = Split-Path $PSScriptRoot -Parent
 $candidates = @(& git -C $root -c core.quotePath=false ls-files --cached --others --exclude-standard)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate the current Git snapshot' }
 $required = @('.gitignore', '.github/workflows/build-release.yml', 'gradlew', 'gradlew.bat',
-    'gradle/wrapper/gradle-wrapper.jar', 'gradle/wrapper/gradle-wrapper.properties')
+    'gradle/wrapper/gradle-wrapper.jar', 'gradle/wrapper/gradle-wrapper.properties',
+    'release-check/src/main/AndroidManifest.xml', 'release-check/proguard-rules.pro',
+    'release-check/src/main/java/dev/scrcpy/releasecheck/NativeSrtCheck.kt')
 if (Test-Path (Join-Path $root 'app/build.gradle')) {
     $required += @('third_party/media3-muxer-1.11.1-sources.jar', 'third_party/media3-muxer-1.11.1-sources.sha256',
         'third_party/srt-1.5.7.tar.gz', 'third_party/srt-1.5.7.sha256', 'THIRD_PARTY.md',
@@ -18,7 +20,7 @@ $binaryAllowlist = @($required | Where-Object { $_ -match '\.(jar|gz|zip)$|scrcp
 $entries = @()
 $excluded = @()
 foreach ($relative in ($candidates | Sort-Object -Unique)) {
-    $allowedRoot = $relative -match '^(app|protocol|third_party|streaming-muxer|tools|gradle)/' -or
+    $allowedRoot = $relative -match '^(app|release-check|protocol|third_party|streaming-muxer|tools|gradle)/' -or
         $relative -eq '.github/workflows/build-release.yml' -or
         $relative -match '^(\.gitignore|\.gitattributes|[A-Z_]+\.md|LICENSE[^/]*|COPYING[^/]*|NOTICE[^/]*|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties|gradlew(\.bat)?)$'
     $privateOrGenerated = $relative -match '(?i)(^|/)(\.git|\.gradle|\.kotlin|\.cxx|\.idea|\.vscode|\.copilot|node_modules|build|gst-android-build|publication-output|publication-snapshot[^/]*)(/|$)' -or

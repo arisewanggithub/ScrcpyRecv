@@ -5,14 +5,18 @@ for variable in ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_BASE64 ANDROID_KEY_ALIAS 
   if [[ -v "$variable" ]]; then echo "Production signing configuration is forbidden in release smoke"; exit 1; fi
 done
 application_id=org.screencopy.receiver
-classes=org.screencopy.receiver.media.NativeSrtTransportTest,org.screencopy.receiver.media.OpusDecoderTest,org.screencopy.receiver.ReleaseRuntimeSmokeTest
-expected=8
+harness_id=dev.scrcpy.releasecheck.receiver
+classes=dev.scrcpy.releasecheck.NativeSrtCheck,dev.scrcpy.releasecheck.NativeOpusCheck,dev.scrcpy.releasecheck.TargetResourcesCheck
+expected=6
 app=app/build/outputs/apk/release/app-release.apk
-test_apk=app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
+mapfile -t harness_apks < <(find release-check/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk')
+[[ "${#harness_apks[@]}" == 1 ]] || { echo "Standalone harness must produce exactly one APK"; exit 1; }
+test_apk="${harness_apks[0]}"
 output=publication-output/release-smoke
 adb="$ANDROID_HOME/platform-tools/adb"
 mkdir -p "$output"
 [[ -s app/build/outputs/mapping/release/mapping.txt ]] || { echo "Optimized release mapping missing"; exit 1; }
+[[ -s release-check/build/outputs/mapping/release/mapping.txt ]] || { echo "Independent harness R8 mapping missing"; exit 1; }
 pwsh -NoProfile -File tools/verify-release-smoke-apks.ps1 -App "$app" -TestApk "$test_apk" -ApplicationId "$application_id" > "$output/apk-policy.txt"
 signer() {
   "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$1" |
@@ -31,6 +35,7 @@ diagnostics() {
   tail -n 100 "$output/emulator.log"
   timeout 10 "$adb" -s emulator-5554 emu kill
   if [[ -n "${emulator_pid:-}" ]] && kill -0 "$emulator_pid" 2>/dev/null; then kill "$emulator_pid"; fi
+  if [[ -n "${emulator_pid:-}" ]]; then wait "$emulator_pid"; fi
   exit "$status"
 }
 trap diagnostics EXIT
@@ -50,9 +55,13 @@ done
 [[ "$("$adb" -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" == 1 ]] || { echo "Not an emulator"; exit 1; }
 [[ "$("$adb" -s emulator-5554 shell getprop ro.build.version.sdk | tr -d '\r')" == 35 ]] || { echo "Not API35"; exit 1; }
 "$adb" -s emulator-5554 install -r "$app"
-"$adb" -s emulator-5554 install -r "$test_apk"
-timeout 300 "$adb" -s emulator-5554 shell am instrument -w -r -e releaseSmoke true -e class "$classes" "$application_id.test/dev.scrcpy.smoke.ReleaseSmokeRunner" > "$output/instrumentation-result.txt" 2>&1
+"$adb" -s emulator-5554 install -r -t "$test_apk"
+timeout 300 "$adb" -s emulator-5554 shell am instrument -w -r -e releaseSmoke true -e class "$classes" "$harness_id/dev.scrcpy.releasecheck.ReleaseCheckRunner" > "$output/instrumentation-result.txt" 2>&1
 sed -i 's/\r$//' "$output/instrumentation-result.txt"
 if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_STATUS_CODE: -[234]|INSTRUMENTATION_CODE: 0' "$output/instrumentation-result.txt"; then exit 1; fi
 grep -Eq "OK \\($expected tests?\\)" "$output/instrumentation-result.txt"
 [[ "$(grep -c '^INSTRUMENTATION_STATUS_CODE: -1$' "$output/instrumentation-result.txt")" == "$expected" ]] || { echo "Every selected smoke test must execute successfully; skips are forbidden"; exit 1; }
+"$adb" -s emulator-5554 shell am start -W -n "$application_id/.MainActivity" > "$output/app-launch.txt" 2>&1
+grep -q 'Status: ok' "$output/app-launch.txt"
+sleep 2
+[[ -n "$("$adb" -s emulator-5554 shell pidof "$application_id" | tr -d '\r')" ]] || { echo "Actual optimized app crashed after launch"; exit 1; }

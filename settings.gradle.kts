@@ -14,3 +14,6 @@ dependencyResolutionManagement {
 }
 rootProject.name = "ScreenCopyReceiver"
 include(":app")
+if (providers.gradleProperty("releaseSmokeTest").getOrElse("false") == "true") {
+    include(":release-check")
+}

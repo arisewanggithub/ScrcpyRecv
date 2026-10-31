@@ -160,28 +160,35 @@ To assemble its safe APK cohort only (no emulator/device operation), from a
 shell with no production signing variables/properties:
 
 ```powershell
-.\gradlew.bat :app:assembleRelease :app:assembleReleaseAndroidTest -PreleaseSmokeTest=true -PsrtTrial=true -PrequireReleaseSigning=false --no-daemon --console plain
-.\tools\verify-release-smoke-apks.ps1 -App app\build\outputs\apk\release\app-release.apk -TestApk app\build\outputs\apk\androidTest\release\app-release-androidTest.apk -ApplicationId org.screencopy.receiver
+.\gradlew.bat :app:assembleRelease :release-check:assembleRelease -PreleaseSmokeTest=true -PsrtTrial=true -PrequireReleaseSigning=false --no-daemon --console plain
+.\tools\verify-release-smoke-apks.ps1 -App app\build\outputs\apk\release\app-release.apk -TestApk release-check\build\outputs\apk\release\release-check-release.apk -ApplicationId org.screencopy.receiver
 ```
 
 The strict property defaults to false. Smoke mode rejects publication signing,
 any supplied production-signing configuration (even empty/masked paths), and
-non-SRT builds. It changes only test source selection, test runner and release
-signer, not release debuggability or variant-specific app ProGuard rules. Exact selected
-native test sources are copied at build time; all debug-only/unsafe tests remain
-excluded. `release-smoke-test-rules.pro` keeps test entry points only in the test
-APK. No main-source test factory or production dependency is introduced.
-Instrumentation explicitly supplies Error Prone annotations 2.41.0:
-AndroidX Test monitor 1.7.2 references `CanIgnoreReturnValue`/`MustBeClosed` but
-omits their dependency from its POM. This test-only jar resolves test-APK R8
-inputs. Only its compiler-annotation metadata's absent JDK
-`javax.lang.model.element.Modifier` enum is suppressed, in instrumentation rules
-only; no JDK compiler classes/stubs are packaged.
-AGP's Java and Kotlin test roots are replaced independently: Kotlin otherwise
-retains its default `androidTest/java` and `androidTest/kotlin` directories.
-DEX separation checks class definitions, not references to external app types.
-Only the current test package's generated `BuildConfig` and `R` are exempt from
-the app-namespace restriction; production wrappers/classes remain forbidden.
+non-SRT builds. It changes only the app release signer and conditionally includes
+the `release-check` module; the app's normal debug AndroidTest cohort is untouched.
+The standalone `com.android.test` module uses AGP's self-instrumenting mode:
+no app compile dependency/mapping or runtime dependency subtraction. Its Kotlin
+runtime is independently minified/repackaged, not borrowed from the optimized app.
+All app code is invoked through the actual target package's distinct classloader.
+The harness contains no app implementations or native libraries.
+
+**Optimized coverage: six tests** — three actual SRT JNI loopback/cancellation/
+stale-handle tests, two actual Opus JNI decode/error tests, and one actual manifest
+resource/launcher check. CI separately launches the real app process without
+starting playback and verifies it survives startup. The original debug
+instrumentation tests remain available separately; their higher-level pipeline
+assertions are not relabeled as optimized-native coverage.
+
+Only the test module supplies Error Prone annotations 2.41.0 and suppresses the
+compiler-only `javax.lang.model.element.Modifier` reference. No production Kotlin
+keeps, test hooks, JDK compiler stubs or production dependencies are added.
+Standalone AGP test components consume `testProguardFiles`, not ordinary
+`proguardFiles`; optimize defaults and the custom harness rules use that API.
+DEX policy rejects any app implementation, duplicate class definition or native
+library in the harness. Opus's existing two-argument construction boundary is
+retained precisely for reflected JNI lifecycle checks, without field/package keeps.
 
 ## Updates and signed releases
 

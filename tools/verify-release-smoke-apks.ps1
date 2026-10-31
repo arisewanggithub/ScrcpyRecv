@@ -62,14 +62,10 @@ function Get-ApkClasses([string]$path) {
 }
 
 function Assert-Separation($appClasses, $testClasses, [string]$id) {
-    $testMetadataPrefix = 'L' + $id.Replace('.', '/') + '/test/'
     foreach ($descriptor in $testClasses) {
         if ($descriptor -cin $appClasses) { throw "App implementation duplicated in test APK: $descriptor" }
-        if ($descriptor -ceq ($testMetadataPrefix + 'BuildConfig;') -or
-            $descriptor -ceq ($testMetadataPrefix + 'R;')) { continue }
         if ($descriptor -cmatch '^L(org/bouncycastle|org/conscrypt|io/github/muntashirakon)/') { throw 'Unminified app library packaged into test APK' }
-        if ($descriptor -cmatch '^L(dev/screencopy/sender|org/screencopy/receiver)/' -and
-            $descriptor -cnotmatch '^L(dev/screencopy/sender/(NativeSrtTest|ReleaseRuntimeSmokeTest)|org/screencopy/receiver/(media/(NativeSrtTransportTest|OpusDecoderTest)|ReleaseRuntimeSmokeTest))(\$[^;]+)?;$') {
+        if ($descriptor -cmatch '^L(dev/screencopy/sender|org/screencopy/receiver|dev/scrcpy/update)/') {
             throw "App wrapper or unsafe test packaged into test APK: $descriptor"
         }
     }
@@ -85,7 +81,7 @@ function Assert-Separation($appClasses, $testClasses, [string]$id) {
 if ($SelfTest) {
     $roots = @('Lorg/screencopy/receiver/media/SrtNative;', 'Lorg/screencopy/receiver/media/OpusDecoder;')
     Assert-Separation $roots @('Ltest/Test;') 'org.screencopy.receiver'
-    Assert-Separation $roots @('Lorg/screencopy/receiver/test/BuildConfig;', 'Lorg/screencopy/receiver/test/R;') 'org.screencopy.receiver'
+    Assert-Separation $roots @('Ldev/scrcpy/releasecheck/NativeSrtCheck;') 'org.screencopy.receiver'
     foreach ($badTest in @('Lorg/conscrypt/Conscrypt;', 'Ldev/screencopy/sender/LocalAdb;',
         'Ldev/screencopy/sender/CodecConfig;', 'Ldev/screencopy/sender/MainActivity;',
         'Ldev/screencopy/sender/Secrets;', 'Ldev/screencopy/sender/Wire;',
@@ -113,6 +109,10 @@ if ($SelfTest) {
     Write-Output 'PASS DEX policy: descriptor parsing, bounds, app/test separation, unminified libraries and debug fixture rejection'
 } else {
     if (!$App -or !$TestApk -or !$ApplicationId) { throw 'App, TestApk and ApplicationId are required' }
+    $harness = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $TestApk))
+    try {
+        if ($harness.Entries | Where-Object { $_.FullName -cmatch '^lib/.+\.so$' }) { throw 'Harness must load app JNI libraries, never package native copies' }
+    } finally { $harness.Dispose() }
     Assert-Separation (Get-ApkClasses $App) (Get-ApkClasses $TestApk) $ApplicationId
     Write-Output 'PASS optimized app/test DEX separation and JNI/reflection roots'
 }
