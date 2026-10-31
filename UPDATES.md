@@ -87,6 +87,9 @@ decode/error checks and one actual manifest-resource/launcher check. Target
 classes/native libraries are loaded from the actual installed app package through
 its separate classloader, not compiled or packaged into the harness. CI launches
 the real app process separately without starting playback.
+Wrong-stream-ID validation requires the listener's specific control-session
+rejection and no usable listener read/write connection. Caller transport connect
+may finish before that application-level check; its success is not acceptance.
 No capture, installer operation, Shizuku permission grant or physical phone is
 involved. Sender-side BC identity, SPAKE2 and Conscrypt factory/reflection checks
 run in the sender's separate job, not this receiver cohort. Established-socket

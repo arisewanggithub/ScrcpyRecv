@@ -66,9 +66,16 @@ class NativeSrtCheck {
         val executor = Executors.newSingleThreadExecutor()
         try {
             val connecting = executor.submit(Callable { api.connect(caller, api.port(listener), 3000) })
-            assertThrows(IOException::class.java) { api.accept(listener, 3000) }
-            val error = assertThrows(ExecutionException::class.java) { connecting.get(5, TimeUnit.SECONDS) }
-            assertTrue(error.cause is IOException)
+            val rejected = assertThrows(IOException::class.java) { api.accept(listener, 3000) }
+            assertTrue(rejected.message.orEmpty().contains("does not match the accepted control session"))
+            val read = assertThrows(IOException::class.java) { api.read(listener, ByteArray(1), 0, 1) }
+            val write = assertThrows(IOException::class.java) { api.write(listener, ByteArray(1), 0, 1) }
+            assertTrue(read.message.orEmpty().contains("has not connected"))
+            assertTrue(write.message.orEmpty().contains("has not connected"))
+            // The transport handshake can finish before listener-side control
+            // validation. Either caller outcome is valid; rejection is proved above.
+            try { connecting.get(5, TimeUnit.SECONDS) }
+            catch (error: ExecutionException) { assertTrue(error.cause is IOException) }
         } finally {
             api.close(caller); api.close(listener)
             executor.shutdownNow()

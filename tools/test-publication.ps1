@@ -65,6 +65,11 @@ $parserBash = if ($env:OS -eq 'Windows_NT') {
 } else { (Get-Command bash).Source }
 & $parserBash --noprofile --norc (Join-Path $PSScriptRoot 'test-run-release-results.sh').Replace('\', '/')
 Assert ($LASTEXITCODE -eq 0) 'Instrumentation parser regression fixtures failed'
+& $parserBash --noprofile --norc (Join-Path $PSScriptRoot 'test-ci-avd-userdata.sh').Replace('\', '/')
+Assert ($LASTEXITCODE -eq 0) 'CI AVD userdata policy fixtures failed'
+Assert ($smokeScript.IndexOf('create avd') -lt $smokeScript.IndexOf('bash tools/set-ci-avd-userdata.sh') -and $smokeScript.IndexOf('bash tools/set-ci-avd-userdata.sh') -lt $smokeScript.IndexOf('"$ANDROID_HOME/emulator/emulator" -avd')) 'CI userdata sizing must precede emulator launch and follow AVD creation'
+$nativeCheck = Get-Content (Join-Path $root 'release-check/src/main/java/dev/scrcpy/releasecheck/NativeSrtCheck.kt') -Raw
+Assert ($nativeCheck -match 'does not match the accepted control session' -and $nativeCheck -match 'has not connected' -and $nativeCheck -notmatch 'assertThrows\(ExecutionException') 'Wrong-SID proof must validate listener rejection/unusable I/O, not race-dependent caller failure'
 $smokeTestCount = 0
 foreach ($file in (Get-ChildItem (Join-Path $root 'release-check/src/main') -Recurse -File -Filter '*.kt')) {
     $content = Get-Content $file.FullName -Raw

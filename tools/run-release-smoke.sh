@@ -32,7 +32,8 @@ diagnostics() {
   printf '%s\n' "$status" > "$output/exit-status.txt"
   timeout 10 "$adb" -s emulator-5554 logcat -d -v threadtime AndroidRuntime:E TestRunner:V AndroidJUnitRunner:V '*:S' > "$output/test-logcat.txt" 2>&1
   cat "$output/instrumentation-result.txt"
-  tail -n 100 "$output/emulator.log"
+  if [[ -f "$output/disk-space.txt" ]]; then cat "$output/disk-space.txt"; fi
+  if [[ -f "$output/emulator.log" ]]; then tail -n 100 "$output/emulator.log"; fi
   timeout 10 "$adb" -s emulator-5554 emu kill
   if [[ -n "${emulator_pid:-}" ]] && kill -0 "$emulator_pid" 2>/dev/null; then kill "$emulator_pid"; fi
   if [[ -n "${emulator_pid:-}" ]]; then wait "$emulator_pid"; fi
@@ -42,6 +43,10 @@ trap diagnostics EXIT
 [[ -r /dev/kvm && -w /dev/kvm ]] || { echo "Disposable emulator requires accessible KVM"; exit 1; }
 mkdir -p "$ANDROID_AVD_HOME"
 echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force --name release-smoke --package "system-images;android-35;google_apis;x86_64"
+bash tools/set-ci-avd-userdata.sh "$ANDROID_AVD_HOME/release-smoke.avd/config.ini"
+df -h "$ANDROID_AVD_HOME" > "$output/disk-space.txt"
+available_kb="$(df -Pk "$ANDROID_AVD_HOME" | awk 'NR==2 { print $4 }')"
+[[ "$available_kb" =~ ^[0-9]+$ && "$available_kb" -ge 3145728 ]] || { echo "At least 3 GiB free is required for 2 GiB userdata plus emulator overhead"; exit 1; }
 "$ANDROID_HOME/emulator/emulator" -avd release-smoke -port 5554 -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -accel on > "$output/emulator.log" 2>&1 &
 emulator_pid=$!
 timeout 180 "$adb" -s emulator-5554 wait-for-device

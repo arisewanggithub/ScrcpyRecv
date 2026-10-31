@@ -197,6 +197,7 @@ jobs:
             publication-output/release-smoke/emulator.log
             publication-output/release-smoke/exit-status.txt
             publication-output/release-smoke/app-launch.txt
+            publication-output/release-smoke/disk-space.txt
             app/build/outputs/mapping/release/mapping.txt
             release-check/build/outputs/mapping/release/mapping.txt
   publish:
