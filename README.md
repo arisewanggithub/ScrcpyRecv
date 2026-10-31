@@ -180,6 +180,9 @@ resource/launcher check. CI separately launches the real app process without
 starting playback and verifies it survives startup. The original debug
 instrumentation tests remain available separately; their higher-level pipeline
 assertions are not relabeled as optimized-native coverage.
+The shared transcript checker requires distinct per-test status **0**, one exact
+JUnit OK summary and one final instrumentation code **-1**. Missing/duplicate
+cases, crashes, failures and skips are rejected by executable fixture tests.
 
 Only the test module supplies Error Prone annotations 2.41.0 and suppresses the
 compiler-only `javax.lang.model.element.Modifier` reference. No production Kotlin

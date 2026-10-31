@@ -57,10 +57,7 @@ done
 "$adb" -s emulator-5554 install -r "$app"
 "$adb" -s emulator-5554 install -r -t "$test_apk"
 timeout 300 "$adb" -s emulator-5554 shell am instrument -w -r -e releaseSmoke true -e class "$classes" "$harness_id/dev.scrcpy.releasecheck.ReleaseCheckRunner" > "$output/instrumentation-result.txt" 2>&1
-sed -i 's/\r$//' "$output/instrumentation-result.txt"
-if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_STATUS_CODE: -[234]|INSTRUMENTATION_CODE: 0' "$output/instrumentation-result.txt"; then exit 1; fi
-grep -Eq "OK \\($expected tests?\\)" "$output/instrumentation-result.txt"
-[[ "$(grep -c '^INSTRUMENTATION_STATUS_CODE: -1$' "$output/instrumentation-result.txt")" == "$expected" ]] || { echo "Every selected smoke test must execute successfully; skips are forbidden"; exit 1; }
+bash tools/check-instrumentation-result.sh "$output/instrumentation-result.txt" "$expected"
 "$adb" -s emulator-5554 shell am start -W -n "$application_id/.MainActivity" > "$output/app-launch.txt" 2>&1
 grep -q 'Status: ok' "$output/app-launch.txt"
 sleep 2
