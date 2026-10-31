@@ -46,11 +46,19 @@ Assets initially belong to the pinned repository's GitHub release download path.
 
 Different signing keys, missing signers, multi-signer packages, or certificate rotations are refused rather than uninstalling or risking data loss. A CI release cannot update a debug-key installation unless its signing certificate is the same. Publication therefore still requires manually configured permanent signing with the intended existing certificate; neither these apps nor their tests create or upload a signing key.
 
-## Runner targets
+Binary publication additionally requires the user's explicit repository variable
+`BINARY_RELEASE_APPROVED=true` after license/distribution and third-party
+corresponding-source/relink review. This is separate from signing configuration
+and does not create a license or compliance guarantee. Source export and CI
+checks do not require binary publication approval.
+
+## Test targets
 
 Both repositories contain pure JVM `dev.scrcpy.update.ReleasePolicyTest` and `dev.scrcpy.update.ReleaseClientTest`.
 
-All updater production code, debug fixtures, and tests are Kotlin. The sender's existing `verifyKotlinSources` invariant still covers every source set under `app/src` and the protocol harness; no exceptions or build-check bypasses were added. Updater coverage is 11 JVM and 12 instrumentation cases per app, plus 18 receiver-only Robolectric UI/lifecycle/operation-outcome/real-entry cases.
+Updater production code, debug fixtures and tests are Kotlin. The sender's
+`verifyKotlinSources` invariant covers every source set under `app/src` and the
+protocol harness. Use results from the current test run, not historical totals.
 
 Both debug APKs include the non-exported `dev.scrcpy.update.UpdateTestActivity`. The instrumentation class `dev.scrcpy.update.AppUpdateRemoteUiTest` exercises actual D-pad key events with an in-memory updater and installer callback:
 
@@ -69,9 +77,19 @@ Both debug APKs include the non-exported `dev.scrcpy.update.UpdateTestActivity`.
 
 Run only that instrumentation selector for the Linux official API 35 x86_64 emulator updater job. It does not start capture, contact GitHub, download an APK, open OEM permission settings, or launch a real installer. Test injection is constructor/package-scoped and has no exported broadcast, intent-extra, URL override, or production verification bypass.
 
-Receiver also provides `dev.scrcpy.update.AppUpdateRemoteUiLocalTest` using its existing Robolectric 4.16.1/resource support, testing native widget focus searches and Center key handling with the same isolated flow. Its result/lifecycle cases are `androidCancellationAndFailureResultsOfferExplicitRetry`, `activityRecreationRestoresPendingAttemptWithoutAutoInstall`, `processRestoreRetainsFileButRequiresFreshVerificationAndExplicitRetry`, and `resultOkNeedsActualInstalledVersionAndFirstUserIsFailure`. These use Android activity-result delivery through Robolectric and a separate app-private test storage namespace, not production preferences or a real installer. `dev.scrcpy.update.UpdateOperationOutcomeLocalTest` exercises the production controller's failed verification/check/download after cancellation, missing retained files, and preservation of a pending installer record using controlled connections and private fixture files. Build and test execution are delegated to the parent runner; no device actions are required to implement the updater.
+Receiver provides `dev.scrcpy.update.AppUpdateRemoteUiLocalTest` using
+Robolectric4.16.1/resources for widget focus, Center key handling, activity
+results, lifecycle restoration and explicit installation retries.
+`dev.scrcpy.update.UpdateOperationOutcomeLocalTest` covers failed verification/
+check/download after cancellation, missing retained files and pending installer
+records using controlled connections and private fixtures. These tests do not
+read production preferences or launch a real installer.
 
-The receiver Robolectric classes explicitly use SDK 28, Conscrypt OFF, LEGACY graphics, and a paused main looper, keeping real app resources enabled. SDK 35 failed before test setup at `AndroidTestEnvironment.setUpApplicationState` / `DefaultNativeRuntimeLoader.ensureLoaded`: Robolectric's native runtime does not support Windows ARM64. The SDK 28 Java-shadow environment matches the existing HEVC test's SDK/Conscrypt configuration and executes the UI, permission, activity-result, lifecycle, and cancellation assertions without loading unsupported native graphics. It is not physical rendering or Android 35 platform proof; that remains the separate official Linux API 35 emulator instrumentation job.
+Receiver Robolectric classes use SDK28, Conscrypt OFF, LEGACY graphics and a
+paused main looper with real app resources. This Java-shadow configuration avoids
+Robolectric native graphics unsupported on Windows ARM64. It is not physical
+rendering or API35 platform evidence; the separate official Linux API35 emulator
+job supplies that instrumentation target.
 
 `dev.scrcpy.update.ReceiverMainActivityUpdateEntryTest` additionally creates the actual receiver MainActivity and waiting-screen resources/lifecycle on a compact landscape fixture. It injects key events through Robolectric's focused-window input dispatch, rather than manually choosing focus targets. Cases `initialExitDpadDownChecksUpdatesAndBackKeepsReceiverOpen` and `visibleUpdateDpadDownAndUpReturnsToIntentionalExit` verify entry, automatic scroll visibility, optional-update navigation, dialog Back cancellation, and deliberate Exit. Only the in-process, debug-guarded updater factory is injected; the fixture leaves the video surface unavailable so no receiver sockets, discovery, playback, capture, settings, or installer are started. There is no intent-extra backdoor or global key interception.
 

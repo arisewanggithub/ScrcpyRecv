@@ -1,6 +1,6 @@
-# ScreenCopy protocol v3 (trusted family LAN, IP/name selection)
+# ScrcpySend / ScrcpyRecv protocol v3 (trusted family LAN, IP/name selection)
 
-Frozen v3 contract, sender-owned, 2026-10-29. **Incompatible with v1/v2.**
+Current v3 interoperability contract. **Incompatible with v1/v2.**
 ScreenCopy uses plain TCP: no TLS, authentication, QR, permanent peer identity,
 credential issuance, saved trust or revocation. Anyone on the LAN can observe or
 forge discovery/session/media traffic. Use ONLY a trusted private family LAN.
@@ -68,11 +68,11 @@ Do not wait for a complete40-byte header to reject invalid magic/version. Old
 clients may expose TLS handshake failure, not connect successfully. Setup and
 individual startup phases10s overall (trickled reads do not extend); writer10s.
 
-## Optional experimental SRT fragmented MP4 media transport
+## SRT fragmented MP4 media transport
 
-This is a separate, explicitly selected **paired-update trial**, not a change to
-the default custom TCP path. Install matching sender and
-receiver trial APKs. An old peer MUST NOT cause silent fallback or capture.
+SRT is explicitly selected alongside the default custom TCP compatibility path.
+Install matching SRT-enabled sender and receiver APKs.
+An incompatible peer MUST NOT cause silent fallback or capture.
 The request contains exactly:
 
 ```json
@@ -80,7 +80,7 @@ The request contains exactly:
 ```
 
 The descriptor has exactly these five fields. `kind` is `srt`, `container` is
-`fmp4`, and `latencyMs` is an integer20..2000 (sender trial uses100).
+`fmp4`, and `latencyMs` is an integer20..2000 (sender uses100).
 `streamId` is `sc-` followed by the positive control-header session ID as exactly
 16 lowercase hexadecimal digits, zero-padded. The example uses session1.
 The URL is plain SRT with an explicit ephemeral port1..65535, numeric IP only,
@@ -96,7 +96,7 @@ The receiver validates the descriptor, session and requested codecs before
 (`[1]` audio off). The sender requires that explicit echo before capture.
 Malformed, unsupported, unavailable or mismatched SRT requests are rejected with
 UNSUPPORTED_CONFIG, never reinterpreted as custom TCP. A present descriptor
-with any unsupported kind, including removed `rtsp`, is likewise rejected.
+with any unsupported kind is likewise rejected.
 The absent `mediaTransport` field alone selects custom TCP. No version bump.
 The receiver then connects as SRT caller. Capture still starts ONLY after
 the user's Play and SESSION_ACCEPT; no automatic retry or new capture.
@@ -114,8 +114,8 @@ is written once; there are no repeated init segments, invented keyframe flags,
 discarded frames or orientation locks. A configuration not followed by a real
 IDR fails explicitly. Changed audio configuration or a different video codec
 still requires a new session. Supported SRT selections are H.264, H.265 or AV1
-with Opus or AAC-LC or audio off; no codec/FPS/bitrate substitution. Do not exercise real
-H.265 capture/Stop in this trial.
+with Opus or AAC-LC or audio off; no codec/FPS/bitrate substitution.
+Real H.265 capture/Stop safety is unverified; do not automate it as acceptance.
 
 HEVC uses standard `hev1`/`hvcC`, serialized by the official Media3 muxer from
 actual complete VPS/SPS/PPS. Parameter arrays permit later in-band updates.
@@ -126,10 +126,9 @@ bridge uses official HEVC SPS/profile metadata to announce actual CSD/dimensions
 before the unchanged access unit. Missing/inconsistent parameters or non-IRAP
 activation fail explicitly. Raw PTS, key flags, FIFO, audio and the SRT connection
 remain intact; no repeated moov, invented CSD/keys, clock reset or capture Stop.
-Both trial APKs must update together; v3 remains unchanged. User-reported initial
-portrait/landscape HEVC playback works; synthetic rotation validation is pending.
-Historical OnePlus real H.265 display-capture/Stop kernel-panic safety remains
-unresolved; notification Stop/recast stays disabled.
+Update both applications together; v3 remains unchanged. Hardware rotation/
+decoder adaptation still requires validation. Real H.265 display-capture/
+Stop/recast safety remains unverified because kernel-panic risk has been reported.
 
 AAC uses standard `mp4a`/`esds` from actual stereo 48 kHz AAC-LC
 AudioSpecificConfig, and raw access units (never ADTS). ASC frameLengthFlag
@@ -166,7 +165,7 @@ Extracted track MIME must match the accepted selection; AAC ASC must match
 its sample entry rate/channel metadata. Audio-off forbids an audio track.
 no decoder backend, audio clock, timestamp or user capture setting is replaced.
 Actual decoder video-size callbacks update receiver Surface aspect/diagnostics.
-This rotation correction keeps v3 framing; rebuild/release both trial apps
+This configuration handling keeps v3 framing; rebuild/release both apps
 together because a v3 version match alone does not prove rotation support.
 No first-party AudioPlayer/VideoPlayer/PlaybackClock is used for this path.
 Only after a real rendered first video frame AND position advancement of enabled
@@ -179,14 +178,14 @@ single-active ownership and cancellation remain in force. Close native input
 before joining workers or releasing Media3 so blocked reads/writes are cancelled.
 Errors are explicit and cannot silently reopen the source.
 
-The SRT APK contains pinned libsrt1.5.7, no GStreamer SDK/bootstrap/native
-libraries. SRT encryption is compiled OFF for this trusted-LAN trial; stream ID
+The SRT APK contains pinned libsrt1.5.7.
+SRT encryption is compiled OFF for this trusted-LAN transport; stream ID
 and peer pinning do not provide confidentiality or authentication. Live/message
 transport uses payloads<=1316 bytes and disables late-packet dropping because
 discarding container bytes corrupts the stream. A stalled sender fails explicitly
 after one second without write progress. Native close must unblock accept,
 connect, read and backpressured write without detached workers.
-`protocol/fixtures/srt-fmp4.json` is the canonical paired trial fixture.
+`protocol/fixtures/srt-fmp4.json` is the canonical paired SRT fixture.
 
 ## TCP binary framing (unchanged for all control paths)
 
@@ -341,7 +340,7 @@ STATUS `{"state":"Streaming","message":"..."}` diagnostic.
 ERROR `{"code":"AUDIO_FAILED","message":"...","fatal":true}` terminal if fatal.
 REJECT always terminal. Codes VERSION, BUSY, UNSUPPORTED_CONFIG,
 PROTOCOL, CAPTURE_FAILED, AUDIO_FAILED, DECODER_FAILED, TIMEOUT, CONGESTION, INTERNAL.
-Do not use AUTH_FAILED (removed). No remote phone input/control.
+AUTH_FAILED is not a v3 error code. No remote phone input/control.
 
 Sender aggregate media<=8MiB AND<=500ms PTS span/track, encoded receiver same
 maximum (stricter allowed if explicit CONGESTION).

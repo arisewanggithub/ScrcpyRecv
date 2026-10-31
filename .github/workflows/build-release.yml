@@ -43,6 +43,9 @@ jobs:
     name: Remote update UI only (ephemeral API35 emulator)
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    env:
+      ANDROID_AVD_HOME: ${{ github.workspace }}/publication-output/update-ui-avd
+      ANDROID_SERIAL: emulator-5554
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -58,6 +61,7 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1" "emulator" "platform-tools" "system-images;android-35;google_apis;x86_64"
+          mkdir -p "$ANDROID_AVD_HOME"
           echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force --name update-ui --package "system-images;android-35;google_apis;x86_64"
           sudo chmod 666 /dev/kvm
       - name: Build unsigned-development app and UI test APKs
@@ -67,26 +71,73 @@ jobs:
       - name: Run only AppUpdateRemoteUiTest on disposable emulator
         run: |
           set -euo pipefail
-          "$ANDROID_HOME/emulator/emulator" -avd update-ui -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -accel on > emulator.log 2>&1 &
-          timeout 180 "$ANDROID_HOME/platform-tools/adb" wait-for-device
+          adb="$ANDROID_HOME/platform-tools/adb"
+          output=publication-output/update-ui
+          mkdir -p "$output"
+          : > "$output/instrumentation-result.txt"
+          diagnostics() {
+            status=$?
+            trap - EXIT
+            set +e
+            printf '%s\n' "$status" > "$output/exit-status.txt"
+            echo "Updater UI step exit status: $status"
+            cat "$output/instrumentation-result.txt"
+            cat "$output/boot-environment.txt"
+            tail -n 100 "$output/emulator.log"
+            if [[ -n "${emulator_pid:-}" ]]; then
+              ps -p "$emulator_pid" -o pid,stat,args > "$output/emulator-process.txt" 2>&1
+              cat "$output/emulator-process.txt"
+            fi
+            timeout 10 "$adb" devices -l > "$output/adb-devices.txt" 2>&1
+            cat "$output/adb-devices.txt"
+            timeout 10 "$adb" -s emulator-5554 shell 'echo sys.boot_completed=$(getprop sys.boot_completed); echo init.svc.bootanim=$(getprop init.svc.bootanim); echo ro.boot.qemu=$(getprop ro.boot.qemu)' > "$output/boot-status.txt" 2>&1
+            cat "$output/boot-status.txt"
+            timeout 10 "$adb" -s emulator-5554 logcat -d -v threadtime ScrcpyUpdateUiTest:V AppUpdateRemoteUiTest:V UpdateTestActivity:V TestRunner:V AndroidJUnitRunner:V AndroidRuntime:E ActivityTaskManager:I '*:S' > "$output/test-logcat.txt" 2>&1
+            tail -n 200 "$output/test-logcat.txt"
+            exit "$status"
+          }
+          trap diagnostics EXIT
+          {
+            printf 'ANDROID_HOME=%s\nANDROID_AVD_HOME=%s\nANDROID_SERIAL=%s\nHOME=%s\n' "$ANDROID_HOME" "$ANDROID_AVD_HOME" "$ANDROID_SERIAL" "$HOME"
+            ls -l /dev/kvm
+            "$ANDROID_HOME/emulator/emulator" -list-avds
+            "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
+          } > "$output/boot-environment.txt" 2>&1
+          if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then echo "::error::KVM is not accessible to the disposable emulator"; exit 1; fi
+          "$ANDROID_HOME/emulator/emulator" -avd update-ui -port 5554 -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -accel on > "$output/emulator.log" 2>&1 &
+          emulator_pid=$!
+          timeout 180 "$adb" -s emulator-5554 wait-for-device
           booted=false
           for attempt in $(seq 1 90); do
-            if [[ "$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed | tr -d '\r')" == 1 ]]; then booted=true; break; fi
+            if [[ "$("$adb" -s emulator-5554 shell getprop sys.boot_completed | tr -d '\r')" == 1 ]]; then booted=true; break; fi
             sleep 2
           done
           if [[ "$booted" != true ]]; then echo "::error::Disposable emulator did not boot"; exit 1; fi
-          adb="$ANDROID_HOME/platform-tools/adb"
-          "$adb" shell input keyevent 82
-          "$adb" install -r app/build/outputs/apk/debug/app-debug.apk
-          "$adb" install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-          "$adb" shell am instrument -w -r -e class dev.scrcpy.update.AppUpdateRemoteUiTest org.screencopy.receiver.test/androidx.test.runner.AndroidJUnitRunner > instrumentation-result.txt
-          cat instrumentation-result.txt
-          if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_STATUS_CODE: -[23]|INSTRUMENTATION_CODE: -[23]' instrumentation-result.txt; then exit 1; fi
-          grep -Eq 'OK \([1-9][0-9]* tests?\)' instrumentation-result.txt
+          "$adb" -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+          "$adb" -s emulator-5554 install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          timeout 180 "$adb" -s emulator-5554 shell am instrument -w -r -e class dev.scrcpy.update.AppUpdateRemoteUiTest org.screencopy.receiver.test/androidx.test.runner.AndroidJUnitRunner > "$output/instrumentation-result.txt" 2>&1
+          if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_STATUS_CODE: -[23]|INSTRUMENTATION_CODE: -[23]' "$output/instrumentation-result.txt"; then exit 1; fi
+          grep -Eq 'OK \([1-9][0-9]* tests?\)' "$output/instrumentation-result.txt"
       - name: Stop disposable emulator
         if: always()
         run: |
-          "$ANDROID_HOME/platform-tools/adb" emu kill || true
+          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill || true
+      - name: Upload only disposable updater UI diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ScrcpyRecv-update-ui-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            publication-output/update-ui/instrumentation-result.txt
+            publication-output/update-ui/emulator.log
+            publication-output/update-ui/test-logcat.txt
+            publication-output/update-ui/adb-devices.txt
+            publication-output/update-ui/exit-status.txt
+            publication-output/update-ui/boot-environment.txt
+            publication-output/update-ui/boot-status.txt
+            publication-output/update-ui/emulator-process.txt
   publish:
     needs: [checks, update-ui]
     if: github.repository == 'arisewanggithub/ScrcpyRecv' && github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && vars.ENABLE_MAIN_PRERELEASES == 'true'))

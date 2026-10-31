@@ -3,7 +3,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $candidates = @(& git -C $root -c core.quotePath=false ls-files --cached --others --exclude-standard)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate the current Git snapshot' }
-$required = @('gradlew', 'gradlew.bat', 'gradle/wrapper/gradle-wrapper.jar', 'gradle/wrapper/gradle-wrapper.properties')
+$required = @('.gitignore', '.github/workflows/build-release.yml', 'gradlew', 'gradlew.bat',
+    'gradle/wrapper/gradle-wrapper.jar', 'gradle/wrapper/gradle-wrapper.properties')
 if (Test-Path (Join-Path $root 'app/build.gradle')) {
     $required += @('third_party/media3-muxer-1.11.1-sources.jar', 'third_party/media3-muxer-1.11.1-sources.sha256',
         'third_party/srt-1.5.7.tar.gz', 'third_party/srt-1.5.7.sha256', 'THIRD_PARTY.md',
@@ -26,10 +27,10 @@ foreach ($relative in ($candidates | Sort-Object -Unique)) {
     if (!$allowedRoot -or $privateOrGenerated) { $excluded += $relative; continue }
     $path = Join-Path $root $relative
     if (!(Test-Path -LiteralPath $path -PathType Leaf)) { continue }
-    $parent = Get-Item -LiteralPath $path
+    $parent = Get-Item -LiteralPath $path -Force
     while ($parent.FullName -ne $root) {
         if ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Snapshot refuses links: $relative" }
-        $parent = Get-Item -LiteralPath (Split-Path $parent.FullName -Parent)
+        $parent = Get-Item -LiteralPath (Split-Path $parent.FullName -Parent) -Force
     }
     $bytes = [IO.File]::ReadAllBytes($path)
     $binary = $bytes -contains 0 -or $relative -match '\.(jar|gz|zip|png|jpg|webp|mp4)$|scrcpy-server-'
@@ -57,7 +58,7 @@ if ($Destination) {
         }
         $target = Join-Path $destinationPath $entry.path
         New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
-        Copy-Item -LiteralPath $source -Destination $target
+        Copy-Item -LiteralPath $source -Destination $target -Force
         if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256) {
             throw "Export verification failed: $($entry.path)"
         }

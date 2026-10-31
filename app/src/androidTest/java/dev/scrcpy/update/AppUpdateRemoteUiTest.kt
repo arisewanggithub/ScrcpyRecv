@@ -3,6 +3,8 @@ package dev.scrcpy.update
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.os.Looper
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -13,11 +15,26 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.rules.TestWatcher
+import org.junit.rules.Timeout
+import org.junit.runner.Description
 import org.junit.runner.RunWith
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class AppUpdateRemoteUiTest {
+    @get:Rule
+    val boundedCase: RuleChain = RuleChain.outerRule(object : TestWatcher() {
+        override fun starting(description: Description) { Log.i("ScrcpyUpdateUiTest", "START ${description.methodName}") }
+        override fun succeeded(description: Description) { Log.i("ScrcpyUpdateUiTest", "PASS ${description.methodName}") }
+        override fun failed(error: Throwable, description: Description) {
+            Log.e("ScrcpyUpdateUiTest", "FAIL ${description.methodName}: ${error.javaClass.simpleName}")
+        }
+        override fun finished(description: Description) { Log.i("ScrcpyUpdateUiTest", "END ${description.methodName}") }
+    }).around(Timeout(30, TimeUnit.SECONDS))
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private lateinit var activity: UpdateTestActivity
     private lateinit var ui: UpdateUi
@@ -82,9 +99,12 @@ class AppUpdateRemoteUiTest {
         }
     }
     @Before fun setup() {
+        check(Looper.myLooper() != Looper.getMainLooper()) { "Instrumentation setup must not run on the app main thread" }
+        Log.i("ScrcpyUpdateUiTest", "setup: startActivitySync")
         val launched = instrumentation.startActivitySync(
             Intent(instrumentation.targetContext, UpdateTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         activity = launched as? UpdateTestActivity ?: error("Updater test host unavailable")
+        Log.i("ScrcpyUpdateUiTest", "setup: initialize fake updater on main")
         instrumentation.runOnMainSync {
             activity.getSharedPreferences(storage, Activity.MODE_PRIVATE).edit().clear().commit()
             backend = FakeBackend()
@@ -96,9 +116,15 @@ class AppUpdateRemoteUiTest {
             ui.focusCheck()
         }
         instrumentation.waitForIdleSync()
+        Log.i("ScrcpyUpdateUiTest", "setup: ready")
     }
     @After fun cleanup() {
-        instrumentation.runOnMainSync { ui.stop(); activity.finish() }
+        Log.i("ScrcpyUpdateUiTest", "cleanup: begin")
+        instrumentation.runOnMainSync {
+            if (::ui.isInitialized) ui.stop()
+            if (::activity.isInitialized) activity.finish()
+        }
+        Log.i("ScrcpyUpdateUiTest", "cleanup: done")
     }
     private fun findButton(root: View?, prefix: String): Button? {
         if (root is Button && root.text.toString().startsWith(prefix)) return root
@@ -116,6 +142,8 @@ class AppUpdateRemoteUiTest {
         return false
     }
     private fun key(code: Int) {
+        check(Looper.myLooper() != Looper.getMainLooper()) { "Synchronous key injection must not run on the app main thread" }
+        Log.i("ScrcpyUpdateUiTest", "key: $code")
         instrumentation.sendKeyDownUpSync(code)
         instrumentation.waitForIdleSync()
     }
