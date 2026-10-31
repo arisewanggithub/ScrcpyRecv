@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source tools/stop-ci-emulator.sh
 [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_OS:-}" == Linux ]] || { echo "Release smoke runs only on the disposable Linux Actions runner"; exit 1; }
 for variable in ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_BASE64 ANDROID_KEY_ALIAS ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD; do
   if [[ -v "$variable" ]]; then echo "Production signing configuration is forbidden in release smoke"; exit 1; fi
@@ -29,14 +30,16 @@ diagnostics() {
   status=$?
   trap - EXIT
   set +e
-  printf '%s\n' "$status" > "$output/exit-status.txt"
   timeout 10 "$adb" -s emulator-5554 logcat -d -v threadtime AndroidRuntime:E TestRunner:V AndroidJUnitRunner:V '*:S' > "$output/test-logcat.txt" 2>&1
   cat "$output/instrumentation-result.txt"
   if [[ -f "$output/disk-space.txt" ]]; then cat "$output/disk-space.txt"; fi
   if [[ -f "$output/emulator.log" ]]; then tail -n 100 "$output/emulator.log"; fi
-  timeout 10 "$adb" -s emulator-5554 emu kill
-  if [[ -n "${emulator_pid:-}" ]] && kill -0 "$emulator_pid" 2>/dev/null; then kill "$emulator_pid"; fi
-  if [[ -n "${emulator_pid:-}" ]]; then wait "$emulator_pid"; fi
+  if [[ -n "${emulator_pid:-}" ]]; then
+    timeout --kill-after=5s 10s "$adb" -s emulator-5554 emu kill ||
+      echo "::warning::Emulator console stop did not respond (it may already have exited)" >&2
+    if ! stop_ci_emulator "$emulator_pid" && [[ "$status" == 0 ]]; then status=1; fi
+  fi
+  printf '%s\n' "$status" > "$output/exit-status.txt"
   exit "$status"
 }
 trap diagnostics EXIT

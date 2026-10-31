@@ -133,7 +133,7 @@ jobs:
       - name: Stop disposable emulator
         if: always()
         run: |
-          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill || true
+          timeout --kill-after=5s 10s "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill || echo "::warning::Emulator console is unavailable or already stopped"
       - name: Upload only disposable updater UI diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -183,7 +183,7 @@ jobs:
       - name: Stop disposable release-smoke emulator
         if: always()
         run: |
-          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill || true
+          timeout --kill-after=5s 10s "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill || echo "::warning::Emulator console is unavailable or already stopped"
       - name: Retain only release-smoke diagnostics and mappings
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

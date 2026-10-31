@@ -58,6 +58,12 @@ checks do not require binary publication approval.
 
 ## Optimized future releases
 
+Disposable CI emulators are stopped by their owning shell only. Shutdown bounds
+TERM to 10 seconds and KILL to another 5 seconds; the shell reaps only after the
+process has exited. Cleanup failure preserves a failed step and cannot turn a
+passing test result into an indefinitely running job. Console shutdown requests
+also have a hard timeout. These helpers never target physical phones.
+
 Release builds use R8 and resource shrinking; debug behavior is unchanged.
 Optimization does not change application IDs, updater SHA/package/version/signer
 checks, host allowlists, version assignment, signing requirements or binary
