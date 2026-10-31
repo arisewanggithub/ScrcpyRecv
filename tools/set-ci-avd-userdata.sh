@@ -3,7 +3,7 @@ set -euo pipefail
 [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_OS:-}" == Linux && -n "${ANDROID_AVD_HOME:-}" ]] || { echo "AVD userdata sizing is CI-only"; exit 1; }
 config="${1:-}"
 case "$config" in
-  "$ANDROID_AVD_HOME/release-smoke.avd/config.ini"|"$ANDROID_AVD_HOME/debug-native.avd/config.ini") ;;
+  "$ANDROID_AVD_HOME/release-smoke.avd/config.ini"|"$ANDROID_AVD_HOME/debug-native.avd/config.ini"|"$ANDROID_AVD_HOME/update-ui.avd/config.ini") ;;
   *) echo "Refusing to edit an AVD outside the declared disposable profiles"; exit 1 ;;
 esac
 [[ -f "$config" ]] || { echo "Disposable AVD config missing: $config"; exit 1; }

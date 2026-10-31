@@ -67,6 +67,8 @@ $parserBash = if ($env:OS -eq 'Windows_NT') {
 Assert ($LASTEXITCODE -eq 0) 'Instrumentation parser regression fixtures failed'
 & $parserBash --noprofile --norc (Join-Path $PSScriptRoot 'test-ci-avd-userdata.sh').Replace('\', '/')
 Assert ($LASTEXITCODE -eq 0) 'CI AVD userdata policy fixtures failed'
+Assert ($workflow -match 'bash tools/set-ci-avd-userdata.sh "\$ANDROID_AVD_HOME/update-ui.avd/config.ini"') 'Updater UI AVD must also receive the bounded userdata config'
+Assert ($workflow.IndexOf('create avd --force --name update-ui') -lt $workflow.IndexOf('bash tools/set-ci-avd-userdata.sh "$ANDROID_AVD_HOME/update-ui.avd/config.ini"')) 'Updater userdata config must follow its AVD creation'
 Assert ($smokeScript.IndexOf('create avd') -lt $smokeScript.IndexOf('bash tools/set-ci-avd-userdata.sh') -and $smokeScript.IndexOf('bash tools/set-ci-avd-userdata.sh') -lt $smokeScript.IndexOf('"$ANDROID_HOME/emulator/emulator" -avd')) 'CI userdata sizing must precede emulator launch and follow AVD creation'
 $nativeCheck = Get-Content (Join-Path $root 'release-check/src/main/java/dev/scrcpy/releasecheck/NativeSrtCheck.kt') -Raw
 Assert ($nativeCheck -match 'does not match the accepted control session' -and $nativeCheck -match 'has not connected' -and $nativeCheck -notmatch 'assertThrows\(ExecutionException') 'Wrong-SID proof must validate listener rejection/unusable I/O, not race-dependent caller failure'

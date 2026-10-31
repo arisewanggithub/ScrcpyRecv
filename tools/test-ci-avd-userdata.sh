@@ -4,7 +4,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 scratch="$root/publication-output/avd-property-fixtures-$$"
 mkdir -p "$scratch"
 trap 'rm -rf "$scratch"' EXIT
-for profile in release-smoke debug-native; do
+for profile in release-smoke debug-native update-ui; do
   mkdir -p "$scratch/$profile.avd"
   config="$scratch/$profile.avd/config.ini"
   printf 'hw.gpu.enabled=yes\ndisk.dataPartition.size=7372M\n  disk.dataPartition.size = 7G\n' > "$config"

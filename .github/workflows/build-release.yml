@@ -74,6 +74,7 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1" "emulator" "platform-tools" "system-images;android-35;google_apis;x86_64"
           mkdir -p "$ANDROID_AVD_HOME"
           echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force --name update-ui --package "system-images;android-35;google_apis;x86_64"
+          bash tools/set-ci-avd-userdata.sh "$ANDROID_AVD_HOME/update-ui.avd/config.ini"
           sudo chmod 666 /dev/kvm
       - name: Build unsigned-development app and UI test APKs
         run: |

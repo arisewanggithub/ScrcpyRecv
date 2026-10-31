@@ -183,7 +183,7 @@ assertions are not relabeled as optimized-native coverage.
 The shared transcript checker requires distinct per-test status **0**, one exact
 JUnit OK summary and one final instrumentation code **-1**. Missing/duplicate
 cases, crashes, failures and skips are rejected by executable fixture tests.
-The disposable CI AVD config uses `disk.dataPartition.size=2G`, set after
+Disposable CI release/debug/update-UI AVD configs use `disk.dataPartition.size=2G`, set after
 creation and before startup. This is the userdata property, not a global
 partition flag. CI checks 3 GiB free and retains filesystem diagnostics; no
 SDK/system directories are deleted.
