@@ -54,18 +54,21 @@ class UpdateUi internal constructor(
     private var reopen = false
     private var localNotice: String? = null
     private var previousFocusId = View.NO_ID
+    private var launchCheckStarted = false
+    private var automaticPromptPending = false
+    private var automaticDialog = false
 
     fun mount(parent: LinearLayout, checkId: Int = View.NO_ID, updateId: Int = View.NO_ID,
         previousFocusId: Int = View.NO_ID) {
         this.previousFocusId = previousFocusId
-        check = button(parent, "Check for updates") { show(); controller.check() }.apply {
+        check = button(parent, "Check for updates", ::checkForUpdates).apply {
             id = if (checkId == View.NO_ID) View.generateViewId() else checkId
         }
         status = text(parent, controller.status).apply {
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.DKGRAY)
         }
-        update = button(parent, "Update available — details", ::show).apply {
+        update = button(parent, "Update available — details") { show() }.apply {
             id = if (updateId == View.NO_ID) View.generateViewId() else updateId
             visibility = if (controller.available()) View.VISIBLE else View.GONE
         }
@@ -87,7 +90,12 @@ class UpdateUi internal constructor(
         visible = true
         installing = controller.installPending()
         controller.attach { render() }
-        controller.foregroundCheck()
+        if (!launchCheckStarted) {
+            launchCheckStarted = true
+            automaticPromptPending = true
+            controller.foregroundCheck()
+            render()
+        }
         if (awaitingPermission) {
             awaitingPermission = false
             show()
@@ -98,12 +106,16 @@ class UpdateUi internal constructor(
     }
     fun saveState(): Bundle = Bundle().apply {
         putBoolean("awaiting_permission", awaitingPermission)
-        putBoolean("reopen", dialog != null || controller.installPending())
+        putBoolean("reopen", dialog != null && !automaticDialog || controller.installPending())
+        putBoolean("launch_check_started", launchCheckStarted)
+        putBoolean("automatic_prompt_pending", automaticPromptPending || automaticDialog)
     }
     fun restoreState(state: Bundle?) {
         if (state == null) return
         awaitingPermission = state.getBoolean("awaiting_permission")
         reopen = state.getBoolean("reopen")
+        launchCheckStarted = state.getBoolean("launch_check_started")
+        automaticPromptPending = state.getBoolean("automatic_prompt_pending")
         installing = controller.installPending()
     }
     fun resume() {
@@ -129,14 +141,29 @@ class UpdateUi internal constructor(
     }
     fun stop() {
         visible = false
-        controller.detach()
+        if (activity.isChangingConfigurations) controller.detachForRecreation() else controller.detach()
+        if (automaticDialog) automaticPromptPending = true
         dialog?.dismiss()
         dialog = null
+        automaticDialog = false
     }
-    fun focusCheck() { check?.requestFocus() }
+    fun returnFocusTo(viewId: Int) { previousFocusId = viewId }
+    fun focusCheck() {
+        val entry = check?.takeIf { it.isShown } ?:
+            if (previousFocusId != View.NO_ID) activity.findViewById<View>(previousFocusId) else null
+        entry?.requestFocus()
+    }
+    fun checkForUpdates() {
+        if (!visible || activity.isFinishing || activity.isDestroyed) return
+        show()
+        controller.check()
+    }
+    fun refresh() { render() }
     private fun allowed(): Boolean = installs.allowed()
-    private fun show() {
+    private fun show(automatic: Boolean = false) {
         if (!visible || activity.isFinishing || activity.isDestroyed || dialog != null) return
+        automaticPromptPending = false
+        automaticDialog = automatic
         localNotice = null
         val body = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -161,6 +188,7 @@ class UpdateUi internal constructor(
     private fun close() {
         dialog?.dismiss()
         dialog = null
+        automaticDialog = false
         val updateButton = update
         if (updateButton?.visibility == View.VISIBLE) updateButton.requestFocus() else focusCheck()
     }
@@ -171,6 +199,15 @@ class UpdateUi internal constructor(
         status?.text = message
         update?.visibility = if (controller.available()) View.VISIBLE else View.GONE
         wireHomeFocus()
+        if (automaticDialog && casting()) {
+            automaticPromptPending = true
+            automaticDialog = false
+            dialog?.dismiss()
+            dialog = null
+        }
+        if (dialog == null && automaticPromptPending && controller.checkSucceeded &&
+            controller.available() && !controller.busy && !controller.installPending() &&
+            !controller.installNeedsRetry() && !casting()) show(automatic = true)
         if (dialog == null) return
         var versions = "Current: ${controller.installedName} (${controller.installedCode})\n"
         controller.release?.let { versions += "Latest: ${it.versionName} (${it.versionCode})\n" }

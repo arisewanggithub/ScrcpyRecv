@@ -49,6 +49,8 @@ open class UpdateController protected constructor(
     private var apkUrl: String? = null
     var status = "Check for a public stable release."
     var busy = false
+    var checkSucceeded = false
+        protected set
     var verified = false
     var downloaded = 0L
     var total = 0L
@@ -153,14 +155,10 @@ open class UpdateController protected constructor(
     }
     open fun attach(value: Observer) { observer = value; notifyUi() }
     open fun detach() { observer = null; cancel() }
+    fun detachForRecreation() { observer = null }
     private fun notifyUi() { observer?.changed() }
     open fun foregroundCheck() {
-        val now = System.currentTimeMillis()
-        val last = prefs.getLong("last_success", 0)
-        val attempt = prefs.getLong("last_attempt", 0)
-        if (now >= prefs.getLong("backoff_until", 0) &&
-            (attempt == 0L || now < attempt || now - attempt >= 3600000L) &&
-            (last == 0L || now < last || now - last >= 86400000L)) check()
+        if (!busy && !installPending() && !installNeedsRetry()) check()
     }
     open fun cancel() {
         generation++
@@ -193,6 +191,8 @@ open class UpdateController protected constructor(
                     prefs.edit().putLong("backoff_until", System.currentTimeMillis() + e.waitMillis).apply()
                 val reason = if (e is java.io.IOException || e is IllegalArgumentException) safeError(e)
                     else "Release metadata or APK could not be verified. Retry."
+                if (ticket == generation)
+                    android.util.Log.w("ScrcpyAppUpdate", "operation=UPDATE_WORK exception=${e.javaClass.simpleName} reason=$reason")
                 post(ticket) { status = reason }
             } finally {
                 worker.shutdown()
@@ -213,9 +213,11 @@ open class UpdateController protected constructor(
     }
     open fun check() {
         if (busy) return
+        checkSucceeded = false
         clearCompletedInstallOutcome()
         if (System.currentTimeMillis() < prefs.getLong("backoff_until", 0)) {
             status = "GitHub rate limit. Retry after the cooldown (up to one day)."
+            android.util.Log.i("ScrcpyAppUpdate", "operation=CHECK deferred=RATE_LIMIT")
             notifyUi()
             return
         }
@@ -233,6 +235,7 @@ open class UpdateController protected constructor(
                     verified = false; retained = false; apk.delete()
                 }
                 release = next; apkUrl = url
+                checkSucceeded = true
                 if (!installPending() && next.versionCode.toLong() != installTargetVersion())
                     prefs.edit().remove("install_target_version").remove("install_outcome").remove("install_signer").apply()
                 prefs.edit().putString("manifest", manifestText).putString("apk_url", url)

@@ -45,6 +45,9 @@ class AppUpdateRemoteUiLocalTest {
         var cancels = 0
         var reportedVersion = installedCode
         var signerMatches = true
+        var automatic = false
+        var pendingCheck = false
+        var checkFailure = false
         init {
             val hash = "a".repeat(64)
             release = ReleasePolicy.Manifest(activity.packageName, "Fixture", "ScrcpyRecv.apk", hash, hash, installedCode.toInt() + 1)
@@ -54,8 +57,21 @@ class AppUpdateRemoteUiLocalTest {
         fun emit() { observer?.changed() }
         override fun attach(value: Observer) { observer = value; emit() }
         override fun detach() { observer = null; cancel() }
-        override fun foregroundCheck() {}
-        override fun check() { clearCompletedInstallOutcome(); checks++; status = "Update available: Fixture"; emit() }
+        override fun foregroundCheck() { if (automatic) check() }
+        override fun check() {
+            clearCompletedInstallOutcome()
+            checks++
+            checkSucceeded = !pendingCheck && !checkFailure
+            busy = pendingCheck
+            status = if (checkFailure) "Controlled update check failed." else "Update available: Fixture"
+            emit()
+        }
+        fun completeCheck(newer: Boolean = true) {
+            release = release?.copy(versionCode = installedCode.toInt() + if (newer) 1 else 0)
+            checkSucceeded = true
+            busy = false
+            emit()
+        }
         override fun download() { clearCompletedInstallOutcome(); downloads++; busy = true; status = "Downloading update…"; emit() }
         override fun cancel() { cancels++; busy = false; emit() }
         override fun verifyForInstall(ready: () -> Unit) { clearCompletedInstallOutcome(); verified = true; ready() }
@@ -118,6 +134,88 @@ class AppUpdateRemoteUiLocalTest {
         ShadowLooper.idleMainLooper()
     }
     private fun open() = center(find(activity.content, "Check"))
+    private fun freshAutomaticLaunch() {
+        ui.stop()
+        backend.automatic = true
+        ui = UpdateUi(activity, backend, { casting }, installs)
+        activity.updatesForTests = ui
+        ui.start()
+        ShadowLooper.idleMainLooper()
+    }
+    @Test fun automaticCheckIsOncePerLaunchAndLaterSuppressesRepeatPrompts() {
+        freshAutomaticLaunch()
+        assertEquals(1, backend.checks)
+        assertNotNull(ui.dialogViewForTests())
+        center(find(ui.dialogViewForTests(), "Later"))
+        ui.resume(); ui.refresh(); ui.stop(); ui.start()
+        assertEquals(1, backend.checks)
+        assertNull(ui.dialogViewForTests())
+        val saved = ui.saveState()
+        ui.stop()
+        ui = UpdateUi(activity, backend, { casting }, installs)
+        activity.updatesForTests = ui
+        ui.restoreState(saved); ui.start(); ui.resume()
+        assertEquals(1, backend.checks)
+        assertNull(ui.dialogViewForTests())
+        freshAutomaticLaunch()
+        assertEquals(2, backend.checks)
+        assertNotNull(ui.dialogViewForTests())
+    }
+    @Test fun asynchronousAutomaticCheckDoesNotPromptBeforeSuccessfulResult() {
+        backend.pendingCheck = true
+        freshAutomaticLaunch()
+        assertEquals(1, backend.checks)
+        assertNull(ui.dialogViewForTests())
+        backend.completeCheck()
+        assertNotNull(ui.dialogViewForTests())
+        assertEquals(0, installs.installs)
+        assertEquals(0, backend.downloads)
+    }
+    @Test fun currentVersionAndFailedCheckDoNotOpenAutomaticDialogs() {
+        backend.pendingCheck = true
+        freshAutomaticLaunch()
+        backend.completeCheck(newer = false)
+        assertNull(ui.dialogViewForTests())
+        backend.pendingCheck = false
+        backend.checkFailure = true
+        backend.release = backend.release?.copy(versionCode = backend.installedCode.toInt() + 1)
+        assertTrue(backend.available())
+        freshAutomaticLaunch()
+        assertEquals(2, backend.checks)
+        assertNull(ui.dialogViewForTests())
+    }
+    @Test fun automaticPromptDefersUntilCastEndsAndNeverStopsTheCast() {
+        casting = true
+        freshAutomaticLaunch()
+        assertNull(ui.dialogViewForTests())
+        assertTrue(casting)
+        casting = false
+        ui.refresh()
+        assertNotNull(ui.dialogViewForTests())
+        casting = true
+        ui.refresh()
+        assertNull(ui.dialogViewForTests())
+        casting = false
+        ui.refresh()
+        center(find(ui.dialogViewForTests(), "Later"))
+        ui.refresh()
+        assertNull(ui.dialogViewForTests())
+        assertEquals(1, backend.checks)
+        assertEquals(0, installs.installs)
+    }
+    @Test fun backDismissesAutomaticPromptForThisLaunchWithoutDownloading() {
+        freshAutomaticLaunch()
+        val dialog = requireNotNull(ui.dialogViewForTests())
+        dialog.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK))
+        dialog.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK))
+        ShadowLooper.idleMainLooper()
+        assertNull(ui.dialogViewForTests())
+        ui.resume(); ui.refresh()
+        assertNull(ui.dialogViewForTests())
+        assertEquals(1, backend.checks)
+        assertEquals(0, backend.downloads)
+        assertFalse(activity.isFinishing)
+    }
     private fun result(code: Int, data: Intent? = null) {
         Shadows.shadowOf(activity).receiveResult(requireNotNull(installs.intent), code, data)
         ShadowLooper.idleMainLooper()

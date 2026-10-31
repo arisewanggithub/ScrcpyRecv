@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger
 @GraphicsMode(GraphicsMode.Mode.LEGACY)
 @LooperMode(LooperMode.Mode.PAUSED)
 class UpdateControllerLifecycleLocalTest {
-    @Test fun cancellationDisconnectsWorkerAndDropsStaleUiCallbacks() {
+    @Test fun recreationRetainsWorkerThenNormalStopCancelsAndDropsStaleUiCallbacks() {
         val reading = CountDownLatch(1)
         val unblock = CountDownLatch(1)
         val closed = CountDownLatch(1)
@@ -56,6 +56,10 @@ class UpdateControllerLifecycleLocalTest {
         controller.attach { callbacks.incrementAndGet() }
         controller.check()
         assertTrue(reading.await(5, TimeUnit.SECONDS))
+        controller.detachForRecreation()
+        assertTrue(controller.busy)
+        assertFalse("Recreation must not disconnect the ongoing launch check", unblock.await(100, TimeUnit.MILLISECONDS))
+        controller.attach { callbacks.incrementAndGet() }
         controller.detach()
         val detachedCount = callbacks.get()
         assertTrue(closed.await(5, TimeUnit.SECONDS))
@@ -64,5 +68,18 @@ class UpdateControllerLifecycleLocalTest {
         assertFalse(controller.busy)
         assertTrue(controller.status.startsWith("Cancelled"))
         assertNull(controller.release)
+    }
+    @Test fun foregroundCheckDoesNotSkipFreshLaunchBecauseOfDailyCache() {
+        val context = RuntimeEnvironment.getApplication()
+        val storage = "update_test_launch_controller"
+        context.getSharedPreferences(storage, 0).edit()
+            .putLong("last_success", System.currentTimeMillis())
+            .putLong("last_attempt", System.currentTimeMillis()).commit()
+        var checks = 0
+        val controller = object : UpdateController(context, "ScrcpyRecv", "ScrcpyRecv.apk", storage) {
+            override fun check() { checks++ }
+        }
+        controller.foregroundCheck()
+        assertEquals(1, checks)
     }
 }

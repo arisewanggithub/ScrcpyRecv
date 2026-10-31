@@ -3,12 +3,10 @@ package dev.scrcpy.update
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.graphics.Rect
 import android.view.KeyEvent
 import android.view.SurfaceView
 import android.view.View
 import android.widget.Button
-import android.widget.ScrollView
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -79,9 +77,7 @@ class ReceiverMainActivityUpdateEntryTest {
         lifecycle.start().resume().visible()
         ShadowLooper.idleMainLooper()
         assertFalse(activity.receiverReadyForTests)
-        assertTrue(exit().hasFocus())
-        val waiting = activity.findViewById<ScrollView>(R.id.waiting_screen)
-        assertTrue(waiting.getChildAt(0).height > waiting.height)
+        assertTrue(settings().hasFocus())
     }
     @After fun cleanup() {
         ui.stop()
@@ -89,56 +85,63 @@ class ReceiverMainActivityUpdateEntryTest {
         ShadowLooper.idleMainLooper()
     }
     private fun exit(): Button = activity.findViewById(R.id.exit_receiver)
-    private fun check(): Button = activity.findViewById(R.id.check_app_updates)
-    private fun available(): Button = activity.findViewById(R.id.app_update_available)
+    private fun settings(): Button = activity.findViewById(R.id.receiver_settings)
     private fun key(code: Int) {
         assertTrue(ShadowUiAutomation.injectInputEvent(KeyEvent(KeyEvent.ACTION_DOWN, code)))
         assertTrue(ShadowUiAutomation.injectInputEvent(KeyEvent(KeyEvent.ACTION_UP, code)))
         ShadowLooper.idleMainLooper()
     }
-    private fun navigateToCheck(code: Int) {
-        repeat(4) { if (!check().hasFocus()) key(code) }
-        assertTrue(check().hasFocus())
-        assertTrue(check().isShown)
-        val visible = Rect()
-        assertTrue(check().getGlobalVisibleRect(visible))
-        assertTrue(visible.height() > 0)
-        assertFalse(activity.isFinishing)
+    @Test fun landscapeHomeKeepsBothReceiverColumnsVisible() {
+        val addresses = activity.findViewById<View>(R.id.address_group)
+        val details = activity.findViewById<View>(R.id.details_group)
+        assertTrue("Receiver address column was squeezed out", addresses.width > 200)
+        assertTrue("Receiver status column was squeezed out", details.width > 200)
+        assertNull(activity.findViewById<View>(R.id.check_app_updates))
+        assertNull(activity.findViewById<View>(R.id.app_update_available))
     }
-    @Test fun initialExitDpadDownChecksUpdatesAndBackKeepsReceiverOpen() {
-        assertEquals(check().id, exit().nextFocusDownId)
-        assertEquals(View.GONE, available().visibility)
-        navigateToCheck(KeyEvent.KEYCODE_DPAD_DOWN)
+    @Test fun initialRemoteConfirmDoesNotExitReceiver() {
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertFalse("Initial remote OK must not activate Exit", activity.isFinishing)
+        assertNotNull(ui.dialogViewForTests())
+    }
+    @Test fun initialSettingsChecksUpdatesAndBackKeepsReceiverOpen() {
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         assertEquals(1, backend.checks)
         assertNotNull(ui.dialogViewForTests())
         key(KeyEvent.KEYCODE_BACK)
         assertNull(ui.dialogViewForTests())
         assertFalse(activity.isFinishing)
-        assertTrue(check().hasFocus())
+        assertTrue(settings().hasFocus())
         assertFalse(activity.receiverReadyForTests)
     }
-    @Test fun visibleUpdateDpadDownAndUpReturnsToIntentionalExit() {
-        backend.makeUpdateAvailable()
-        ShadowLooper.idleMainLooper()
-        assertEquals(check().id, exit().nextFocusRightId)
-        navigateToCheck(KeyEvent.KEYCODE_DPAD_DOWN)
-        assertEquals(available().id, check().nextFocusRightId)
-        repeat(4) { if (!available().hasFocus()) key(KeyEvent.KEYCODE_DPAD_DOWN) }
-        assertTrue(available().hasFocus())
+    @Test fun deliberateDpadNavigationStillReachesExit() {
+        assertEquals(exit().id, settings().nextFocusDownId)
+        assertEquals(settings().id, exit().nextFocusUpId)
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertTrue(exit().hasFocus())
+        key(KeyEvent.KEYCODE_DPAD_UP)
+        assertTrue(settings().hasFocus())
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         assertNotNull(ui.dialogViewForTests())
-        assertEquals(0, backend.checks)
+        assertEquals(1, backend.checks)
         key(KeyEvent.KEYCODE_BACK)
         assertNull(ui.dialogViewForTests())
         assertFalse(activity.isFinishing)
-        key(KeyEvent.KEYCODE_DPAD_UP)
-        assertTrue(check().hasFocus())
-        assertEquals(exit().id, check().nextFocusLeftId)
-        key(KeyEvent.KEYCODE_DPAD_UP)
+        assertTrue(settings().hasFocus())
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
         assertTrue(exit().hasFocus())
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         assertTrue(activity.isFinishing)
         assertFalse(activity.receiverReadyForTests)
+    }
+    @Test fun configurationChangePreservesLayoutAndManualSettingsEntry() {
+        activity.onConfigurationChanged(android.content.res.Configuration(activity.resources.configuration))
+        ShadowLooper.idleMainLooper()
+        assertTrue(settings().hasFocus())
+        assertNull(activity.findViewById<View>(R.id.check_app_updates))
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals(1, backend.checks)
+        assertNotNull(ui.dialogViewForTests())
+        assertFalse(activity.isFinishing)
     }
 }

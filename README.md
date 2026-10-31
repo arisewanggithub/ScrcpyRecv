@@ -62,6 +62,10 @@ window/cutout insets and overscan-safe margins. Playback is aspect-fit and
 letterboxed rather than stretched or cropped again. The visible Activity stays
 awake; it does not change system power or keyguard settings.
 
+Initial remote focus is **Settings**, so the first OK does not accidentally
+activate Exit. Update checks run once per fresh launch without adding controls
+to the landscape address/status row; manual checking is available in Settings.
+
 The sender may request receiver orientation `auto`, `landscape` or `portrait`
 for a session. It affects presentation only, not capture dimensions, media
 rotation or timestamps. The previous Activity policy is restored on teardown.

@@ -92,9 +92,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         updates = updateUiFactoryForTests?.invoke(this, castActive) ?: dev.scrcpy.update.UpdateUi(this,
             dev.scrcpy.update.UpdateController.get(this, "ScrcpyRecv", "ScrcpyRecv.apk"),
             castActive)
-        updates.mount(findViewById<android.widget.LinearLayout>(R.id.waiting_content),
-            R.id.check_app_updates, R.id.app_update_available, R.id.exit_receiver)
         updates.restoreState(savedInstanceState?.getBundle("app_update_ui"))
+        bindSettings()
         surface.holder.addCallback(this)
         root.setOnApplyWindowInsetsListener { view, insets ->
             if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -165,8 +164,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         parent.removeView(waiting)
         parent.addView(layoutInflater.inflate(R.layout.receiver_waiting, parent, false), index)
         screenView = ReceiverScreenView(root, ::exitReceiver)
-        updates.mount(findViewById<android.widget.LinearLayout>(R.id.waiting_content),
-            R.id.check_app_updates, R.id.app_update_available, R.id.exit_receiver)
+        bindSettings()
         fitWaitingScreen()
         fitVideo()
         render()
@@ -248,6 +246,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private fun exitReceiver() {
         if (exiting) return
+        android.util.Log.i("ScreenCopyReceiver", "event=RECEIVER_EXIT_REQUESTED source=EXIT_BUTTON")
         exiting = true
         active = false
         restoreOrientation()
@@ -318,6 +317,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private fun render() {
         screenView.render(screen)
+        updates.refresh()
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             window.insetsController?.let {
                 it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -329,6 +329,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or if (screen.showWaiting) 0 else
                 (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
         }
+    }
+
+    private fun bindSettings() {
+        updates.returnFocusTo(R.id.receiver_settings)
+        findViewById<android.widget.Button>(R.id.receiver_settings).setOnClickListener { updates.checkForUpdates() }
     }
 
     private fun fitWaitingScreen() {
