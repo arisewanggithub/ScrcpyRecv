@@ -3,6 +3,16 @@ plugins {
 }
 
 val srtTrial = providers.gradleProperty("srtTrial").map { it.toBooleanStrict() }.getOrElse(false)
+val releaseSmokeTest = providers.gradleProperty("releaseSmokeTest").map { it.toBooleanStrict() }.getOrElse(false)
+val requireReleaseSigning = providers.gradleProperty("requireReleaseSigning").map { it.toBooleanStrict() }.getOrElse(false)
+val productionSigningConfigured = providers.gradleProperty("releaseSigningKeystorePath").isPresent ||
+    listOf("ANDROID_KEYSTORE_PATH", "ANDROID_KEYSTORE_BASE64", "ANDROID_KEY_ALIAS", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_PASSWORD").any {
+        providers.environmentVariable(it).isPresent
+    }
+require(!releaseSmokeTest || (!requireReleaseSigning && !productionSigningConfigured)) {
+    "Release smoke signing is test-only and cannot coexist with publication or production signing configuration"
+}
+require(!releaseSmokeTest || srtTrial) { "Release smoke requires srtTrial=true; skipped native tests are forbidden" }
 val releaseVersionCode = providers.gradleProperty("releaseVersionCode").getOrElse("1").toInt()
 require(releaseVersionCode > 0) { "releaseVersionCode must be a positive Android version code" }
 val releaseKeystore = providers.gradleProperty("releaseSigningKeystorePath")
@@ -15,7 +25,7 @@ val hasReleaseSigning = releaseSigningValues.all { it.isNotEmpty() }
 require(releaseSigningValues.none { it.isNotEmpty() } || hasReleaseSigning) {
     "Incomplete release signing configuration; provide the keystore path and all three signing environment variables"
 }
-require(!providers.gradleProperty("requireReleaseSigning").getOrElse("false").toBooleanStrict() || hasReleaseSigning) {
+require(!requireReleaseSigning || hasReleaseSigning) {
     "Publication requires manually configured release signing; unsigned APK publication is forbidden"
 }
 
@@ -60,6 +70,14 @@ android {
     lint {
         abortOnError = true
     }
+    buildTypes {
+        getByName("release") {
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
     if (hasReleaseSigning) {
         val publicationSigning = signingConfigs.create("publication") {
             storeFile = file(releaseKeystore)
@@ -68,6 +86,38 @@ android {
             keyPassword = releaseKeyPassword
         }
         buildTypes.getByName("release").signingConfig = publicationSigning
+    }
+    if (releaseSmokeTest) {
+        testBuildType = "release"
+        buildTypes.getByName("release").signingConfig = signingConfigs.getByName("debug")
+        buildTypes.getByName("release").testProguardFiles("release-smoke-test-rules.pro")
+        defaultConfig.testInstrumentationRunner = "dev.scrcpy.smoke.ReleaseSmokeRunner"
+        val smokeSourceDirectories = listOf(
+            file("src/releaseSmokeTest/java"), file("${layout.buildDirectory.get().asFile}/generated/releaseSmokeTests/java")
+        )
+        sourceSets["androidTest"].java.setSrcDirs(smokeSourceDirectories)
+        // AGP's independent Kotlin defaults include androidTest/java as well.
+        sourceSets["androidTest"].kotlin.setSrcDirs(smokeSourceDirectories)
+    }
+}
+
+if (releaseSmokeTest) {
+    val originalSmokeTestFiles = listOf(
+        file("src/androidTest/java/org/screencopy/receiver/media/NativeSrtTransportTest.kt"),
+        file("src/androidTest/java/org/screencopy/receiver/media/OpusDecoderTest.kt")
+    )
+    val smokeOutputDirectory = file("${layout.buildDirectory.get().asFile}/generated/releaseSmokeTests/java")
+    val selectedSmokeSources = tasks.register<Sync>("prepareReleaseSmokeSources") {
+        from(originalSmokeTestFiles) {
+            into("org/screencopy/receiver/media")
+        }
+        into(smokeOutputDirectory)
+    }
+    tasks.matching {
+        it.name != "prepareReleaseSmokeSources" &&
+            it.name in listOf("preReleaseAndroidTestBuild", "compileReleaseAndroidTestKotlin", "compileReleaseAndroidTestJavaWithJavac")
+    }.configureEach {
+        dependsOn(selectedSmokeSources)
     }
 }
 
@@ -81,4 +131,6 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.16.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    // AndroidX Test monitor's CLASS-retained annotations are absent from its POM.
+    androidTestImplementation("com.google.errorprone:error_prone_annotations:2.41.0")
 }

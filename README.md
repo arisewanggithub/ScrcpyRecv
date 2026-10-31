@@ -109,7 +109,10 @@ The optional `.\tools\interop.ps1 -SenderRoot ..\ScrcpySend` reads sender
 sources without building/writing that checkout; `SCRCPY_SEND_ROOT` can
 override the sibling default.
 
-CI runs JVM tests, lint and debug builds in both profiles. Its disposable Linux
+CI runs JVM tests, lint, debug builds and unsigned optimized release assembly
+in both profiles. Release assembly runs R8/resource shrinking before the
+publisher can use signing secrets; it does not prove runtime compatibility.
+Its disposable Linux
 **API35 x86_64** emulator runs only
 `dev.scrcpy.update.AppUpdateRemoteUiTest`, not capture or codec acceptance
 tests. APKs are built before emulator boot. Failure/timeout retains partial
@@ -118,6 +121,67 @@ that emulator job uploads only disposable UI diagnostics. Verification claims mu
 current run, not historical totals.
 CI also retains app JUnit XML when available for exact failure messages/stacks,
 without uploading APKs or signing material.
+
+### Release optimization
+
+Only `release` enables R8 code optimization/obfuscation and resource shrinking,
+using `proguard-android-optimize.txt` plus targeted SRT/Opus JNI declaring-class
+and native-method rules. Manifest components use AGP-generated keeps and Media3
+uses upstream AAR consumer rules. Debug/test fixtures remain unchanged; there
+are no whole app/updater/Media3 keeps or added warning suppressions. Required
+licenses/source assets, native libraries, all three ABIs and 16 KiB link options
+are unchanged.
+
+For runner validation, in a shell with **no release-signing environment variables
+or Gradle signing properties configured**, run in both transport profiles:
+
+```powershell
+.\tools\test-publication.ps1
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug :app:lintRelease :app:assembleRelease -PsrtTrial=true -PrequireReleaseSigning=false --no-daemon --console plain
+```
+
+Repeat with `-PsrtTrial=false`. `requireReleaseSigning=false` permits unsigned
+assembly; it does **not** override any supplied signing configuration.
+Inspect `app\build\outputs\apk\release\app-release-unsigned.apk` and
+`app\build\outputs\mapping\release\mapping.txt`: confirm JNI declaring/method
+names, manifest components, absence of `UpdateTestActivity`, required assets
+and resources. Check SRT/Opus JNI exports and 16 KiB ELF alignment on every ABI.
+AGP's release CMake variant normally uses optimized `RelWithDebInfo`; confirm
+the generated flags rather than forcing global `-O3`/LTO. Opus already has its
+targeted `-O2` setting.
+
+Unsigned assembly and the existing **debug-only** updater emulator tests are
+not optimized-release smoke tests. The separate `optimized-native-smoke` CI job
+builds the actual non-debuggable release with R8/resource shrinking and a
+disposable test signer. Publication waits for that job as well as existing checks.
+See [UPDATES.md](UPDATES.md) for coverage, limitations and mapping retention.
+
+To assemble its safe APK cohort only (no emulator/device operation), from a
+shell with no production signing variables/properties:
+
+```powershell
+.\gradlew.bat :app:assembleRelease :app:assembleReleaseAndroidTest -PreleaseSmokeTest=true -PsrtTrial=true -PrequireReleaseSigning=false --no-daemon --console plain
+.\tools\verify-release-smoke-apks.ps1 -App app\build\outputs\apk\release\app-release.apk -TestApk app\build\outputs\apk\androidTest\release\app-release-androidTest.apk -ApplicationId org.screencopy.receiver
+```
+
+The strict property defaults to false. Smoke mode rejects publication signing,
+any supplied production-signing configuration (even empty/masked paths), and
+non-SRT builds. It changes only test source selection, test runner and release
+signer, not release debuggability or variant-specific app ProGuard rules. Exact selected
+native test sources are copied at build time; all debug-only/unsafe tests remain
+excluded. `release-smoke-test-rules.pro` keeps test entry points only in the test
+APK. No main-source test factory or production dependency is introduced.
+Instrumentation explicitly supplies Error Prone annotations 2.41.0:
+AndroidX Test monitor 1.7.2 references `CanIgnoreReturnValue`/`MustBeClosed` but
+omits their dependency from its POM. This test-only jar resolves test-APK R8
+inputs. Only its compiler-annotation metadata's absent JDK
+`javax.lang.model.element.Modifier` enum is suppressed, in instrumentation rules
+only; no JDK compiler classes/stubs are packaged.
+AGP's Java and Kotlin test roots are replaced independently: Kotlin otherwise
+retains its default `androidTest/java` and `androidTest/kotlin` directories.
+DEX separation checks class definitions, not references to external app types.
+Only the current test package's generated `BuildConfig` and `R` are exempt from
+the app-namespace restriction; production wrappers/classes remain forbidden.
 
 ## Updates and signed releases
 
