@@ -112,8 +112,10 @@ CI runs JVM tests, lint and debug builds in both profiles. Its disposable Linux
 `dev.scrcpy.update.AppUpdateRemoteUiTest`, not capture or codec acceptance
 tests. APKs are built before emulator boot. Failure/timeout retains partial
 instrumentation output, targeted test logcat and the original exit status;
-only disposable UI diagnostics are uploaded. Verification claims must use the
+that emulator job uploads only disposable UI diagnostics. Verification claims must use the
 current run, not historical totals.
+CI also retains app JUnit XML when available for exact failure messages/stacks,
+without uploading APKs or signing material.
 
 ## Updates and signed releases
 

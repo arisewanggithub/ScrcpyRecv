@@ -14,6 +14,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
@@ -221,8 +222,24 @@ class ReceiverServerTest {
         val peers = (1..16).map { connect(server) }
         try {
             server.close()
-            peers.forEach { assertEquals(-1, it.inputStream.read()) }
+            peers.forEach { peer ->
+                assertFalse(peer.isClosed)
+                try {
+                    assertEquals(-1, peer.inputStream.read())
+                } catch (e: SocketException) {
+                    // Closing a listener's accepted/backlogged peers may produce reset instead of FIN.
+                    if (!e.message.equals("Connection reset", ignoreCase = true) &&
+                        !e.message.equals("Connection reset by peer", ignoreCase = true)) throw e
+                }
+            }
             java.net.ServerSocket().use { it.reuseAddress = true; it.bind(InetSocketAddress(port)) }
+            ReceiverServer.forProtocolTests("Rebound receiver", port = port).use { rebound ->
+                rebound.start()
+                assertEquals(port, rebound.listeningPort)
+                connect(rebound).use { peer ->
+                    assertEquals("Rebound receiver", hello(peer).json().string("name"))
+                }
+            }
             assertThrows(IllegalStateException::class.java) { server.start() }
         } finally { peers.forEach(Socket::close); server.close() }
     }

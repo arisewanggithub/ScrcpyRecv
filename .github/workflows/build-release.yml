@@ -39,6 +39,14 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew testDebugUnitTest lintDebug assembleDebug -PsrtTrial=${{ matrix.srt }} -PnodeExecutable="$(command -v node)" --no-daemon --console plain
+      - name: Retain JVM test XML for diagnosis
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ScrcpyRecv-junit-srt-${{ matrix.srt }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: app/build/test-results/testDebugUnitTest/TEST-*.xml
   update-ui:
     name: Remote update UI only (ephemeral API35 emulator)
     runs-on: ubuntu-24.04

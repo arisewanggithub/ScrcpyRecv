@@ -3,7 +3,10 @@ package dev.scrcpy.update
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Looper
+import android.os.Handler
+import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
@@ -23,6 +26,8 @@ import org.junit.rules.Timeout
 import org.junit.runner.Description
 import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class AppUpdateRemoteUiTest {
@@ -116,6 +121,15 @@ class AppUpdateRemoteUiTest {
             ui.focusCheck()
         }
         instrumentation.waitForIdleSync()
+        awaitUi("initial host window and Check focus") {
+            activity.window.decorView.hasWindowFocus() &&
+                button(activity.content, "Check for updates").hasFocus()
+        }
+        key(KeyEvent.KEYCODE_DPAD_UP)
+        awaitUi("native remote mode") {
+            !activity.window.decorView.isInTouchMode &&
+                button(activity.content, "Check for updates").hasFocus()
+        }
         Log.i("ScrcpyUpdateUiTest", "setup: ready")
     }
     @After fun cleanup() {
@@ -141,11 +155,75 @@ class AppUpdateRemoteUiTest {
         }
         return false
     }
+    private fun activeRoot(): View = ui.dialogViewForTests() ?: activity.window.decorView
+    private fun visibleButton(view: View?): Boolean {
+        if (view !is Button || !view.isShown || !view.isEnabled) return false
+        val bounds = Rect()
+        return view.getGlobalVisibleRect(bounds) && bounds.width() > 0 && bounds.height() > 0
+    }
+    private fun uiState(): String {
+        val root = activeRoot()
+        val focused = root.findFocus()
+        val label = if (focused is Button) focused.text.toString() else focused?.javaClass?.simpleName
+        return "dialog=${ui.dialogViewForTests() != null}, windowFocus=${root.hasWindowFocus()}, " +
+            "touchMode=${root.isInTouchMode}, focused=$label, shown=${focused?.isShown}, " +
+            "busy=${backend.busy}, installs=${installs.installed}, settings=${installs.settingsOpened}, status=${backend.status}"
+    }
+    private fun awaitUi(description: String, condition: () -> Boolean) {
+        check(Looper.myLooper() != Looper.getMainLooper()) { "UI conditions must not be awaited on the app main thread" }
+        val main = Handler(Looper.getMainLooper())
+        val done = CountDownLatch(1)
+        val failure = AtomicReference<Throwable?>(null)
+        val deadline = SystemClock.uptimeMillis() + 5000
+        val poll = object : Runnable {
+            override fun run() {
+                try {
+                    when {
+                        condition() -> {
+                            Log.i("ScrcpyUpdateUiTest", "$description READY: ${uiState()}")
+                            done.countDown()
+                        }
+                        SystemClock.uptimeMillis() >= deadline -> {
+                            failure.set(AssertionError("$description timed out: ${uiState()}"))
+                            done.countDown()
+                        }
+                        else -> main.postDelayed(this, 16)
+                    }
+                } catch (error: Throwable) {
+                    failure.set(error)
+                    done.countDown()
+                }
+            }
+        }
+        main.post(poll)
+        try {
+            assertTrue("$description: app main thread did not respond", done.await(6, TimeUnit.SECONDS))
+            failure.get()?.let { throw it }
+        } finally {
+            main.removeCallbacks(poll)
+        }
+    }
+    private fun awaitWindow(description: String) = awaitUi(description) {
+        val root = activeRoot()
+        val focused = root.findFocus()
+        root.isAttachedToWindow && root.hasWindowFocus() && visibleButton(focused)
+    }
+    private fun awaitFocused(prefix: String) = awaitUi("native focus on $prefix") {
+        val root = ui.dialogViewForTests()
+        root != null && root.hasWindowFocus() && !root.isInTouchMode &&
+            button(root, prefix).let { it.hasFocus() && visibleButton(it) }
+    }
+    private fun awaitInstalled(expected: Int) = awaitUi("installer called exactly $expected times") {
+        assertTrue("Duplicate installer invocation: ${uiState()}", installs.installed <= expected)
+        installs.installed == expected && !backend.busy && ui.dialogViewForTests() == null
+    }
     private fun key(code: Int) {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Synchronous key injection must not run on the app main thread" }
+        awaitWindow("before key $code")
         Log.i("ScrcpyUpdateUiTest", "key: $code")
         instrumentation.sendKeyDownUpSync(code)
         instrumentation.waitForIdleSync()
+        awaitWindow("after key $code")
     }
     private fun center() = key(KeyEvent.KEYCODE_DPAD_CENTER)
     private fun down() = key(KeyEvent.KEYCODE_DPAD_DOWN)
@@ -171,12 +249,20 @@ class AppUpdateRemoteUiTest {
     @Suppress("DEPRECATION")
     @Test fun installPermissionReturnRetainsDownloadAndRequiresExplicitInstall() {
         instrumentation.runOnMainSync { backend.verified = true; backend.emit() }
-        center(); center()
+        center()
+        awaitFocused("Allow installs")
+        center()
+        awaitUi("permission settings called exactly once") {
+            assertTrue("Duplicate permission-settings invocation: ${uiState()}", installs.settingsOpened <= 1)
+            installs.settingsOpened == 1 && !backend.busy
+        }
         assertEquals(1, installs.settingsOpened)
         assertEquals(0, installs.installed)
         instrumentation.runOnMainSync { ui.stop(); installs.allowed = true; ui.start() }
         assertTrue(backend.verified)
+        awaitFocused("Install update")
         center()
+        awaitInstalled(1)
         assertEquals(1, installs.installed)
         val intent = requireNotNull(installs.intent)
         assertEquals(Intent.ACTION_INSTALL_PACKAGE, intent.action)
@@ -216,7 +302,10 @@ class AppUpdateRemoteUiTest {
         assertEquals(2, backend.checks)
     }
     @Test fun dpadDirectionsPreserveVisibleFocusAndBackCancels() {
-        center(); down()
+        center()
+        awaitFocused("Update")
+        down()
+        awaitFocused("Retry")
         instrumentation.runOnMainSync { assertTrue(button(ui.dialogViewForTests(), "Retry").hasFocus()) }
         key(KeyEvent.KEYCODE_DPAD_UP)
         key(KeyEvent.KEYCODE_DPAD_LEFT)
@@ -259,7 +348,10 @@ class AppUpdateRemoteUiTest {
     }
     @Test fun pendingInstallRestoreNeedsExplicitRetryWithoutAutoLaunch() {
         instrumentation.runOnMainSync { backend.verified = true; installs.allowed = true }
-        center(); center()
+        center()
+        awaitFocused("Install update")
+        center()
+        awaitInstalled(1)
         instrumentation.runOnMainSync {
             val saved = ui.saveState()
             ui.stop()
@@ -272,7 +364,9 @@ class AppUpdateRemoteUiTest {
         }
         assertEquals(1, installs.installed)
         assertEquals(0, backend.downloads)
+        awaitFocused("Retry installation")
         center()
+        awaitInstalled(2)
         assertEquals(2, installs.installed)
     }
     @Test fun installerResultOkDoesNotClaimSuccessWithoutInstalledVersionChange() {
