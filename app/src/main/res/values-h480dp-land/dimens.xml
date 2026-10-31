@@ -1,0 +1,8 @@
+<resources>
+    <dimen name="address_height">112dp</dimen>
+    <dimen name="header_gap">16dp</dimen>
+    <dimen name="label_gap">32dp</dimen>
+    <dimen name="message_gap">18dp</dimen>
+    <dimen name="exit_gap">28dp</dimen>
+    <dimen name="footer_gap">24dp</dimen>
+</resources>

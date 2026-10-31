@@ -1,0 +1,4 @@
+<resources>
+    <item type="id" name="check_app_updates" />
+    <item type="id" name="app_update_available" />
+</resources>

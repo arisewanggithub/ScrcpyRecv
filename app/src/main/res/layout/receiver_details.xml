@@ -1,0 +1,62 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/details_group"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:orientation="vertical">
+    <TextView
+        android:id="@+id/status_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/status_background"
+        android:gravity="center"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:text="@string/status_starting"
+        android:textColor="@color/screen_accent"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:accessibilityLiveRegion="polite" />
+    <TextView
+        android:id="@+id/message_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/message_gap"
+        android:gravity="center"
+        android:text="@string/starting_hint"
+        android:textColor="@color/screen_foreground"
+        android:textSize="18sp" />
+    <TextView
+        android:id="@+id/error_message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="center"
+        android:textColor="@color/screen_error"
+        android:textSize="18sp"
+        android:visibility="gone" />
+    <Button
+        android:id="@+id/exit_receiver"
+        android:layout_width="160dp"
+        android:layout_height="56dp"
+        android:layout_marginTop="@dimen/exit_gap"
+        android:background="@drawable/exit_background"
+        android:backgroundTint="@null"
+        android:contentDescription="@string/exit_accessibility"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:nextFocusDown="@id/check_app_updates"
+        android:nextFocusRight="@id/check_app_updates"
+        android:text="@string/exit"
+        android:textAllCaps="false"
+        android:textColor="@color/exit_text"
+        android:textSize="20sp" />
+    <TextView
+        style="@style/ReceiverSecondary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/footer_gap"
+        android:text="@string/trusted_lan" />
+</LinearLayout>

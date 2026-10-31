@@ -1,0 +1,42 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/address_group"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:orientation="vertical">
+    <ImageView
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:src="@drawable/ic_receiver"
+        android:importantForAccessibility="no" />
+    <TextView
+        style="@style/ReceiverSecondary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/header_gap"
+        android:letterSpacing="0.16"
+        android:text="@string/brand" />
+    <TextView
+        style="@style/ReceiverSecondary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/label_gap"
+        android:labelFor="@id/receiver_addresses"
+        android:text="@string/receiver_ip" />
+    <TextView
+        android:id="@+id/receiver_addresses"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/address_height"
+        android:layout_marginTop="8dp"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="16sp"
+        android:autoSizeMaxTextSize="72sp"
+        android:autoSizeStepGranularity="2sp"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:maxLines="1"
+        android:textDirection="ltr"
+        android:textColor="@color/screen_foreground"
+        android:textStyle="bold"
+        android:text="@string/address_unavailable" />
+</LinearLayout>
