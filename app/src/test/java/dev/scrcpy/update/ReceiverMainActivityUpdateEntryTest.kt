@@ -7,6 +7,7 @@ import android.view.KeyEvent
 import android.view.SurfaceView
 import android.view.View
 import android.widget.Button
+import android.widget.TextView
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -42,11 +43,12 @@ class ReceiverMainActivityUpdateEntryTest {
         var cancels = 0
         override fun attach(value: Observer) { observer = value; observer?.changed() }
         override fun detach() { observer = null; cancel() }
-        override fun foregroundCheck() {}
+        override fun foregroundCheck() { check() }
         override fun check() {
             clearCompletedInstallOutcome()
             checks++
             status = "Controlled update check completed."
+            checkSucceeded = false
             observer?.changed()
         }
         override fun cancel() { cancels++; busy = false; observer?.changed() }
@@ -55,6 +57,7 @@ class ReceiverMainActivityUpdateEntryTest {
         fun makeUpdateAvailable() {
             release = ReleasePolicy.Manifest("org.screencopy.receiver", "Fixture", "ScrcpyRecv.apk",
                 "a".repeat(64), "a".repeat(64), installedCode.toInt() + 1)
+            checkSucceeded = true
             observer?.changed()
         }
     }
@@ -77,7 +80,9 @@ class ReceiverMainActivityUpdateEntryTest {
         lifecycle.start().resume().visible()
         ShadowLooper.idleMainLooper()
         assertFalse(activity.receiverReadyForTests)
-        assertTrue(settings().hasFocus())
+        assertTrue(home().hasFocus())
+        assertEquals(1, backend.checks)
+        assertNull(ui.dialogViewForTests())
     }
     @After fun cleanup() {
         ui.stop()
@@ -85,7 +90,7 @@ class ReceiverMainActivityUpdateEntryTest {
         ShadowLooper.idleMainLooper()
     }
     private fun exit(): Button = activity.findViewById(R.id.exit_receiver)
-    private fun settings(): Button = activity.findViewById(R.id.receiver_settings)
+    private fun home(): View = activity.findViewById(R.id.waiting_content)
     private fun key(code: Int) {
         assertTrue(ShadowUiAutomation.injectInputEvent(KeyEvent(KeyEvent.ACTION_DOWN, code)))
         assertTrue(ShadowUiAutomation.injectInputEvent(KeyEvent(KeyEvent.ACTION_UP, code)))
@@ -98,50 +103,54 @@ class ReceiverMainActivityUpdateEntryTest {
         assertTrue("Receiver status column was squeezed out", details.width > 200)
         assertNull(activity.findViewById<View>(R.id.check_app_updates))
         assertNull(activity.findViewById<View>(R.id.app_update_available))
+        assertEquals(activity.getString(R.string.installed_version, backend.installedName),
+            activity.findViewById<TextView>(R.id.home_installed_version).text.toString())
     }
     @Test fun initialRemoteConfirmDoesNotExitReceiver() {
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         assertFalse("Initial remote OK must not activate Exit", activity.isFinishing)
-        assertNotNull(ui.dialogViewForTests())
+        assertNull(ui.dialogViewForTests())
+        assertEquals(1, backend.checks)
     }
-    @Test fun initialSettingsChecksUpdatesAndBackKeepsReceiverOpen() {
-        key(KeyEvent.KEYCODE_DPAD_CENTER)
+    @Test fun onlyNewVersionOpensPopupAndBackKeepsReceiverOpen() {
+        backend.makeUpdateAvailable()
+        ShadowLooper.idleMainLooper()
         assertEquals(1, backend.checks)
         assertNotNull(ui.dialogViewForTests())
         key(KeyEvent.KEYCODE_BACK)
         assertNull(ui.dialogViewForTests())
         assertFalse(activity.isFinishing)
-        assertTrue(settings().hasFocus())
+        assertTrue(home().hasFocus())
         assertFalse(activity.receiverReadyForTests)
     }
     @Test fun deliberateDpadNavigationStillReachesExit() {
-        assertEquals(exit().id, settings().nextFocusDownId)
-        assertEquals(settings().id, exit().nextFocusUpId)
+        assertEquals(exit().id, home().nextFocusDownId)
+        assertEquals(home().id, exit().nextFocusUpId)
         key(KeyEvent.KEYCODE_DPAD_DOWN)
         assertTrue(exit().hasFocus())
         key(KeyEvent.KEYCODE_DPAD_UP)
-        assertTrue(settings().hasFocus())
+        assertTrue(home().hasFocus())
         key(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertNotNull(ui.dialogViewForTests())
-        assertEquals(1, backend.checks)
-        key(KeyEvent.KEYCODE_BACK)
         assertNull(ui.dialogViewForTests())
+        assertEquals(1, backend.checks)
         assertFalse(activity.isFinishing)
-        assertTrue(settings().hasFocus())
+        assertTrue(home().hasFocus())
         key(KeyEvent.KEYCODE_DPAD_DOWN)
         assertTrue(exit().hasFocus())
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         assertTrue(activity.isFinishing)
         assertFalse(activity.receiverReadyForTests)
     }
-    @Test fun configurationChangePreservesLayoutAndManualSettingsEntry() {
+    @Test fun configurationChangePreservesVersionAndDoesNotCheckAgain() {
         activity.onConfigurationChanged(android.content.res.Configuration(activity.resources.configuration))
         ShadowLooper.idleMainLooper()
-        assertTrue(settings().hasFocus())
+        assertTrue(home().hasFocus())
         assertNull(activity.findViewById<View>(R.id.check_app_updates))
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         assertEquals(1, backend.checks)
-        assertNotNull(ui.dialogViewForTests())
+        assertNull(ui.dialogViewForTests())
+        assertEquals(activity.getString(R.string.installed_version, backend.installedName),
+            activity.findViewById<TextView>(R.id.home_installed_version).text.toString())
         assertFalse(activity.isFinishing)
     }
 }

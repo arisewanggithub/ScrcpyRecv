@@ -43,7 +43,6 @@ class UpdateUi internal constructor(
     private var check: Button? = null
     private var update: Button? = null
     private var action: Button? = null
-    private var retry: Button? = null
     private var cancel: Button? = null
     private var status: TextView? = null
     private var details: TextView? = null
@@ -57,6 +56,7 @@ class UpdateUi internal constructor(
     private var launchCheckStarted = false
     private var automaticPromptPending = false
     private var automaticDialog = false
+    val installedVersion: String get() = controller.installedName
 
     fun mount(parent: LinearLayout, checkId: Int = View.NO_ID, updateId: Int = View.NO_ID,
         previousFocusId: Int = View.NO_ID) {
@@ -89,6 +89,7 @@ class UpdateUi internal constructor(
     fun start() {
         visible = true
         installing = controller.installPending()
+        if (!launchCheckStarted) controller.finishUpdateRequested = false
         controller.attach { render() }
         if (!launchCheckStarted) {
             launchCheckStarted = true
@@ -98,9 +99,12 @@ class UpdateUi internal constructor(
         }
         if (awaitingPermission) {
             awaitingPermission = false
-            show()
+            val continueInstall = controller.finishUpdateRequested && allowed() && !casting()
+            controller.finishUpdateRequested = false
+            if (!casting()) show() else automaticPromptPending = true
             localNotice = if (allowed()) "Install permission enabled. Choose Install update."
                 else "Install permission is still disabled. Choose Allow installs and enable this app, then return."
+            if (continueInstall) act()
             render()
         }
     }
@@ -122,10 +126,12 @@ class UpdateUi internal constructor(
         val returning = controller.installPending()
         if (returning) controller.reconcileInstall(null)
         installing = controller.installPending()
-        if ((returning || reopen) && visible && !casting()) {
+        val actionable = controller.available() || controller.installNeedsRetry()
+        if ((returning || reopen) && visible && !casting() && actionable) {
             reopen = false
             show()
         }
+        if (!actionable) { reopen = false; if (returning) close() }
         render()
     }
     fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
@@ -134,14 +140,18 @@ class UpdateUi internal constructor(
             controller.reconcileInstall(resultCode)
             installing = false
             reopen = true
-            if (visible && !casting()) { reopen = false; show() }
+            if (visible && !casting() && (controller.available() || controller.installNeedsRetry())) { reopen = false; show() }
+            else if (!controller.available() && !controller.installNeedsRetry()) { reopen = false; close() }
             render()
         }
         return true
     }
     fun stop() {
         visible = false
+        val continuePermission = awaitingPermission && controller.finishUpdateRequested && !activity.isFinishing
+        if (!activity.isChangingConfigurations) controller.finishUpdateRequested = false
         if (activity.isChangingConfigurations) controller.detachForRecreation() else controller.detach()
+        if (continuePermission) controller.finishUpdateRequested = true
         if (automaticDialog) automaticPromptPending = true
         dialog?.dismiss()
         dialog = null
@@ -171,19 +181,23 @@ class UpdateUi internal constructor(
             setPadding(pad, pad, pad, pad)
         }
         details = text(body, "")
-        val actionButton = button(body, "Update", ::act).also { action = it }
-        val retryButton = button(body, "Retry check") { localNotice = null; controller.check() }.also { retry = it }
-        val cancelButton = button(body, "Later") { controller.cancel(); close() }.also { cancel = it }
+        val actionButton = button(body, "Download and install update", ::act).also { action = it }
+        val cancelButton = button(body, "Later", ::later).also { cancel = it }
         val scroll = ScrollView(activity).apply { addView(body) }
         val current = AlertDialog.Builder(activity).setTitle("App updates").setView(scroll).create()
         dialog = current
         current.setOnCancelListener {
-            if (dialog === current) { controller.cancel(); close() }
+            if (dialog === current) later()
         }
         current.setOnDismissListener { if (dialog === current) dialog = null }
         current.show()
         render()
-        (if (controller.busy) cancelButton else if (controller.available()) actionButton else retryButton).requestFocus()
+        (if (!controller.busy && controller.available()) actionButton else cancelButton).requestFocus()
+    }
+    private fun later() {
+        controller.finishUpdateRequested = false
+        controller.cancel()
+        close()
     }
     private fun close() {
         dialog?.dismiss()
@@ -208,6 +222,10 @@ class UpdateUi internal constructor(
         if (dialog == null && automaticPromptPending && controller.checkSucceeded &&
             controller.available() && !controller.busy && !controller.installPending() &&
             !controller.installNeedsRetry() && !casting()) show(automatic = true)
+        if (controller.finishUpdateRequested && !controller.busy && !awaitingPermission) {
+            controller.finishUpdateRequested = false
+            if (controller.downloadReady()) act()
+        }
         if (dialog == null) return
         var versions = "Current: ${controller.installedName} (${controller.installedCode})\n"
         controller.release?.let { versions += "Latest: ${it.versionName} (${it.versionCode})\n" }
@@ -222,16 +240,19 @@ class UpdateUi internal constructor(
             if (allowed()) {
                 if (controller.installNeedsRetry()) "Retry installation" else "Install update"
             } else "Allow installs"
-        } else "Update — download"
+        } else "Download and install update"
         action?.isEnabled = controller.available() && !controller.busy && !installing
-        retry?.isEnabled = !controller.busy && !installing
-        cancel?.text = if (controller.busy) "Cancel" else "Later"
         if (controller.busy && cancel?.hasFocus() == false) cancel?.requestFocus()
     }
     private fun act() {
         localNotice = null
         if (installing || controller.installPending()) return
-        if (!controller.downloadReady()) { controller.download(); return }
+        if (!controller.downloadReady()) {
+            controller.finishUpdateRequested = true
+            controller.download()
+            if (!controller.busy) controller.finishUpdateRequested = false
+            return
+        }
         if (casting()) {
             localNotice = "Stop casting before installing. This updater will not stop an active cast."
             render()
@@ -247,6 +268,7 @@ class UpdateUi internal constructor(
             if (!allowed()) {
                 try {
                     awaitingPermission = true
+                    controller.finishUpdateRequested = true
                     installs.openSettings()
                 } catch (_: ActivityNotFoundException) {
                     missingSettings()
@@ -284,6 +306,7 @@ class UpdateUi internal constructor(
     }
     private fun missingSettings() {
         awaitingPermission = false
+        controller.finishUpdateRequested = false
         localNotice = "This device has no app-scoped install settings. Open Android Settings, find this app's Install unknown apps permission, then return."
         render()
     }

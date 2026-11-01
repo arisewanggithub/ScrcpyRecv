@@ -1,6 +1,8 @@
-name: ScrcpyRecv build, test and signed releases
+name: ScrcpyRecv PR validation and signed releases
 on:
   pull_request:
+    branches: [main]
+  workflow_dispatch:
   push:
     branches: [main]
     tags: ['v*']
@@ -11,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   checks:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -51,6 +54,7 @@ jobs:
           if-no-files-found: ignore
           path: app/build/test-results/testDebugUnitTest/TEST-*.xml
   update-ui:
+    if: github.event_name == 'pull_request'
     name: Remote update UI only (ephemeral API35 emulator)
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -130,6 +134,7 @@ jobs:
           timeout 180 "$adb" -s emulator-5554 shell am instrument -w -r -e class dev.scrcpy.update.AppUpdateRemoteUiTest org.screencopy.receiver.test/androidx.test.runner.AndroidJUnitRunner > "$output/instrumentation-result.txt" 2>&1
           if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_STATUS_CODE: -[23]|INSTRUMENTATION_CODE: -[23]' "$output/instrumentation-result.txt"; then exit 1; fi
           grep -Eq 'OK \([1-9][0-9]* tests?\)' "$output/instrumentation-result.txt"
+          bash tools/check-instrumentation-result.sh "$output/instrumentation-result.txt" 14
       - name: Stop disposable emulator
         if: always()
         run: |
@@ -151,6 +156,7 @@ jobs:
             publication-output/update-ui/boot-status.txt
             publication-output/update-ui/emulator-process.txt
   optimized-native-smoke:
+    if: github.event_name == 'pull_request'
     name: Optimized release runtime (disposable API35 emulator)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -201,8 +207,57 @@ jobs:
             publication-output/release-smoke/disk-space.txt
             app/build/outputs/mapping/release/mapping.txt
             release-check/build/outputs/mapping/release/mapping.txt
-  publish:
+  record-validation:
+    name: Validated PR source proof
+    if: github.event_name == 'pull_request'
     needs: [checks, update-ui, optimized-native-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Record the tested PR merge tree
+        shell: pwsh
+        run: ./tools/pr-validation.ps1 -Mode Record
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ScrcpyRecv-pr-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: publication-output/pr-validation.json
+  verify-validation:
+    name: Verify validated release source
+    if: github.repository == 'arisewanggithub/ScrcpyRecv' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && vars.ENABLE_MAIN_PRERELEASES == 'true'))))
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Locate a successful merged-main PR validation
+        id: validation
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./tools/pr-validation.ps1 -Mode Locate
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          artifact-ids: ${{ steps.validation.outputs.artifact_id }}
+          run-id: ${{ steps.validation.outputs.run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: publication-output/pr-validation
+      - name: Verify exact tested source tree and proof identity
+        shell: pwsh
+        run: ./tools/pr-validation.ps1 -Mode Verify
+  publish:
+    needs: [verify-validation]
     if: github.repository == 'arisewanggithub/ScrcpyRecv' && github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && vars.ENABLE_MAIN_PRERELEASES == 'true'))
     permissions:
       contents: write
@@ -264,6 +319,8 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
       - name: Build signed SRT and custom TCP release
         run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || { echo "::error::Signed checkout differs from validated release revision"; exit 1; }
           chmod +x gradlew
           ./gradlew :app:assembleRelease -PsrtTrial=true -PrequireReleaseSigning=true -PreleaseSmokeTest=false -PnodeExecutable="$(command -v node)" --no-daemon --console plain
       - name: Retain exact signed-release R8 mapping (not a release asset)

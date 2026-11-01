@@ -11,6 +11,11 @@
         android:layout_height="wrap_content"
         android:gravity="center"
         android:orientation="horizontal"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:descendantFocusability="beforeDescendants"
+        android:nextFocusDown="@id/exit_receiver"
+        android:nextFocusRight="@id/exit_receiver"
         android:padding="32dp">
         <include layout="@layout/receiver_address"
             android:layout_width="0dp"

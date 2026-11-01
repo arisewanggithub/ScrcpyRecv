@@ -93,7 +93,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             dev.scrcpy.update.UpdateController.get(this, "ScrcpyRecv", "ScrcpyRecv.apk"),
             castActive)
         updates.restoreState(savedInstanceState?.getBundle("app_update_ui"))
-        bindSettings()
+        bindHome()
         surface.holder.addCallback(this)
         root.setOnApplyWindowInsetsListener { view, insets ->
             if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -148,10 +148,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     override fun onResume() {
         super.onResume()
         updates.resume()
+        refreshVersion()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
-        if (updates.onActivityResult(requestCode, resultCode, data)) return
+        if (updates.onActivityResult(requestCode, resultCode, data)) { refreshVersion(); return }
         super.onActivityResult(requestCode, resultCode, data)
     }
 
@@ -164,7 +165,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         parent.removeView(waiting)
         parent.addView(layoutInflater.inflate(R.layout.receiver_waiting, parent, false), index)
         screenView = ReceiverScreenView(root, ::exitReceiver)
-        bindSettings()
+        bindHome()
         fitWaitingScreen()
         fitVideo()
         render()
@@ -318,6 +319,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun render() {
         screenView.render(screen)
         updates.refresh()
+        refreshVersion()
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             window.insetsController?.let {
                 it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -331,9 +333,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun bindSettings() {
-        updates.returnFocusTo(R.id.receiver_settings)
-        findViewById<android.widget.Button>(R.id.receiver_settings).setOnClickListener { updates.checkForUpdates() }
+    private fun bindHome() {
+        updates.returnFocusTo(R.id.waiting_content)
+        refreshVersion()
+    }
+
+    private fun refreshVersion() {
+        findViewById<android.widget.TextView>(R.id.home_installed_version).text =
+            getString(R.string.installed_version, updates.installedVersion)
     }
 
     private fun fitWaitingScreen() {

@@ -233,12 +233,12 @@ class AppUpdateRemoteUiTest {
         assertEquals(1, backend.checks)
         instrumentation.runOnMainSync {
             assertNotNull(ui.dialogViewForTests())
-            assertTrue(button(ui.dialogViewForTests(), "Update").hasFocus())
+            assertTrue(button(ui.dialogViewForTests(), "Download and install").hasFocus())
         }
         center()
         assertEquals(1, backend.downloads)
         assertTrue(backend.busy)
-        instrumentation.runOnMainSync { assertTrue(button(ui.dialogViewForTests(), "Cancel").hasFocus()) }
+        instrumentation.runOnMainSync { assertTrue(button(ui.dialogViewForTests(), "Later").hasFocus()) }
         center()
         assertFalse(backend.busy)
         center()
@@ -247,7 +247,7 @@ class AppUpdateRemoteUiTest {
         assertFalse(activity.isFinishing)
     }
     @Suppress("DEPRECATION")
-    @Test fun installPermissionReturnRetainsDownloadAndRequiresExplicitInstall() {
+    @Test fun permissionReturnContinuesOnlyTheExplicitUpdateRequest() {
         instrumentation.runOnMainSync { backend.verified = true; backend.emit() }
         center()
         awaitFocused("Allow installs")
@@ -260,8 +260,6 @@ class AppUpdateRemoteUiTest {
         assertEquals(0, installs.installed)
         instrumentation.runOnMainSync { ui.stop(); installs.allowed = true; ui.start() }
         assertTrue(backend.verified)
-        awaitFocused("Install update")
-        center()
         awaitInstalled(1)
         assertEquals(1, installs.installed)
         val intent = requireNotNull(installs.intent)
@@ -299,14 +297,16 @@ class AppUpdateRemoteUiTest {
         center()
         instrumentation.runOnMainSync { backend.status = "Update check/download failed. Check internet access and retry."; backend.emit() }
         down(); center()
+        instrumentation.runOnMainSync { ui.focusCheck() }
+        center()
         assertEquals(2, backend.checks)
     }
     @Test fun dpadDirectionsPreserveVisibleFocusAndBackCancels() {
         center()
-        awaitFocused("Update")
+        awaitFocused("Download and install")
         down()
-        awaitFocused("Retry")
-        instrumentation.runOnMainSync { assertTrue(button(ui.dialogViewForTests(), "Retry").hasFocus()) }
+        awaitFocused("Later")
+        instrumentation.runOnMainSync { assertTrue(button(ui.dialogViewForTests(), "Later").hasFocus()) }
         key(KeyEvent.KEYCODE_DPAD_UP)
         key(KeyEvent.KEYCODE_DPAD_LEFT)
         key(KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -377,7 +377,8 @@ class AppUpdateRemoteUiTest {
             assertTrue(containsText(ui.dialogViewForTests(), "has not been confirmed"))
             backend.reportedVersion = requireNotNull(backend.release).versionCode.toLong()
             activity.dispatchInstallResultForTests(installs.requestCode, Activity.RESULT_OK, null)
-            assertTrue(containsText(ui.dialogViewForTests(), "Update installed"))
+            assertTrue(backend.displayStatus().contains("Update installed"))
+            assertNull(ui.dialogViewForTests())
         }
         assertEquals(1, installs.installed)
     }
@@ -414,6 +415,8 @@ class AppUpdateRemoteUiTest {
         }
         instrumentation.waitForIdleSync()
         down(); center()
+        instrumentation.runOnMainSync { ui.focusCheck() }
+        center()
         instrumentation.runOnMainSync {
             assertTrue(containsText(ui.dialogViewForTests(), "HTTP 500"))
             assertFalse(containsText(ui.dialogViewForTests(), "Installation cancelled"))
@@ -422,4 +425,36 @@ class AppUpdateRemoteUiTest {
         }
         assertEquals(1, installs.installed)
     }
+    @Test fun twoActionsDownloadAndInstallWithoutAnotherAppTap() {
+        center()
+        instrumentation.runOnMainSync {
+            installs.allowed = true
+            assertEquals(2, countButtons(requireNotNull(ui.dialogViewForTests())))
+        }
+        center()
+        assertEquals(1, backend.downloads)
+        assertEquals(0, installs.installed)
+        instrumentation.runOnMainSync { backend.verified = true; backend.busy = false; backend.emit() }
+        awaitInstalled(1)
+        assertFalse(backend.finishUpdateRequested)
+    }
+    @Test fun installedVersionIsVisibleOnTheActualHomeScreen() {
+        assertTrue("Home test is disposable-emulator only",
+            android.os.Build.VERSION.SDK_INT == 35 && android.os.Build.HARDWARE in setOf("ranchu", "goldfish"))
+        val home = instrumentation.startActivitySync(Intent(instrumentation.targetContext,
+            org.screencopy.receiver.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        instrumentation.waitForIdleSync()
+        try {
+            instrumentation.runOnMainSync {
+                val version = home.findViewById<TextView>(org.screencopy.receiver.R.id.home_installed_version)
+                val info = home.packageManager.getPackageInfo(home.packageName, 0)
+                assertEquals(home.getString(org.screencopy.receiver.R.string.installed_version, info.versionName), version.text.toString())
+                val bounds = Rect()
+                assertTrue(version.getGlobalVisibleRect(bounds) && bounds.width() > 0 && bounds.height() > 0)
+            }
+        } finally { instrumentation.runOnMainSync { home.finish() }; instrumentation.waitForIdleSync() }
+    }
+    private fun countButtons(view: View): Int = if (!view.isShown) 0 else if (view is Button) 1
+        else if (view is ViewGroup) (0 until view.childCount).sumOf { countButtons(view.getChildAt(it)) }
+        else 0
 }

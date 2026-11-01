@@ -4,11 +4,11 @@ ScrcpySend and ScrcpyRecv use the stable Android application IDs `dev.screencopy
 
 ## Remote-only flow
 
-There is no permanent update button or update status on either home screen. Each fresh app launch checks asynchronously once; rotation and ordinary resume do not start another check. A successful check opens the update dialog only for a newer version, and waits until casting is idle. **Later** or Back dismisses the prompt for that launch. Failed checks are logged without a popup; GitHub rate-limit cooldowns still apply. Manual checking remains in sender **Settings → Check for updates** and receiver **Settings**. Navigate with D-pad directions and select with Center/OK; focus has a high-contrast border.
+Both home screens show the actual installed app version, without update status controls. Each fresh launch checks silently once; rotation and ordinary resume do not start another check. Only a successful check for a newer version opens the popup, after casting is idle. **Later** or Back dismisses it for that launch. Failed checks are logged without a popup; GitHub cooldowns still apply. The receiver has no Settings/update entry. Sender capture Settings still provides a manual check. D-pad/Center/OK navigation has visible focus.
 
-The update dialog shows installed/latest versions, status, **Update**, **Retry check**, and **Later**. Downloads focus **Cancel**; Back also cancels. Cancellation, timeout and process loss never turn a partial file into an installable update. In-flight work survives activity recreation without holding the old activity; leaving the app normally cancels it. A completed, verified download remains available in the running process. Ordinary process restart requires an explicit new download. After a user-initiated installation attempt, the completed APK is retained across process restart, but its hash, package/version, and signing certificate must be verified again on explicit retry.
+The popup has exactly two actions: **Download and install update** and **Later**. One explicit primary-action press downloads, verifies, and opens Android's installer when permitted and idle. The same primary button represents install permission or retry when needed. Later/Back also cancels an in-flight download. Consent survives rotation within the running process, never process restart or a fresh launch. Partial files are never installable. After a user-initiated installation attempt, the completed APK is retained across process restart but must be verified again on explicit retry.
 
-Installing requires the cast to be idle. The updater never stops capture or receiver playback for installation. **Allow installs** opens Android's app-scoped unknown-source permission settings; return and explicitly choose **Install update**. This is not a root/Shizuku/silent installer. The OEM installer may require its own confirmation. Missing settings or installer activities show actionable errors. No notification permission or browser is needed for this flow.
+Installing requires an idle cast; the updater never stops capture or playback. **Allow installs** opens Android's app-scoped permission settings. Returning with permission granted continues only the existing explicit request in that process; after process loss a new action is required. Android's installer and Play Protect confirmations remain under user control. This is not a root/Shizuku/silent installer. Missing OEM activities show actionable errors. No notification permission or browser is needed.
 
 A pending or interrupted installer attempt takes precedence over the launch check: its explicit retry status and retained file are preserved until a manual operation.
 
@@ -18,7 +18,7 @@ Installer launch requests a standard activity result (`EXTRA_RETURN_RESULT`, req
 
 A new check, download, or verification takes precedence over historical installer status. Completed installer outcomes are cleared before that operation, including cooldown/retry errors, while a genuinely pending installer record is preserved. Verification errors remove the invalid APK and show the fresh verification error rather than an old cancellation message. Retention messages check whether the APK actually exists; activity recreation cannot revive a cleared old outcome.
 
-The receiver initially focuses **Settings**, not Exit: the first remote OK opens the manual updater rather than closing the app. Down/Right reaches deliberately selected **Exit**; Up/Left returns to Settings. Back closes the update dialog without closing the receiver. Both actions live inside the status column, preserving the landscape address/status layout on projectors.
+The receiver initially focuses its passive home content, so the first remote OK cannot accidentally activate Exit. Down/Right deliberately selects Exit; Up/Left returns home. Back closes the update popup without closing the receiver. The landscape address/status composition remains intact.
 
 ## Public release contract
 
@@ -57,6 +57,27 @@ and does not create a license or compliance guarantee. Source export and CI
 checks do not require binary publication approval.
 
 ## Optimized future releases
+
+### PR validation versus publication
+
+The workflow separates jobs by event. PRs alone run the full default/SRT JVM,
+lint, debug, remote UI (14 tests), optimized runtime and sender container suites.
+After all checks pass, **Validated PR source proof** records the PR head and
+tested merge tree as a small 90-day Actions artifact. This is a required merge
+check alongside the four existing validation checks.
+
+Ordinary main pushes do not rebuild or rerun the suite. Stable tags and opted-in
+main prereleases first require an exact merged protected-main PR commit, a
+successful PR workflow with every required job executed, and a retained proof
+whose source tree matches the release checkout. Missing/expired/mismatched proof
+fails closed; revalidate the PR instead of bypassing checks. Matching trees
+support GitHub's merge/squash commit metadata without substituting different code.
+Only then does publication build/sign the actual APK, verify its package/version,
+signature and checksum, create the updater manifest, and publish. Signing,
+binary-distribution approval, exact asset names and mapping retention are unchanged.
+
+**Run workflow** manually performs read-only release-proof verification on the
+selected main revision. It never builds, signs, or publishes an APK.
 
 Disposable CI emulators are stopped by their owning shell only. Shutdown bounds
 TERM to 10 seconds and KILL to another 5 seconds; the shell reaps only after the
