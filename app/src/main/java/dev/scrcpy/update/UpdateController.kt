@@ -49,6 +49,8 @@ open class UpdateController protected constructor(
     private var apkUrl: String? = null
     var status = "Check for a public stable release."
     var busy = false
+    // Explicit update consent survives rotation, never process restart.
+    var finishUpdateRequested = false
     var checkSucceeded = false
         protected set
     var verified = false
@@ -161,6 +163,7 @@ open class UpdateController protected constructor(
         if (!busy && !installPending() && !installNeedsRetry()) check()
     }
     open fun cancel() {
+        finishUpdateRequested = false
         generation++
         client?.cancel()
         executor?.shutdownNow()

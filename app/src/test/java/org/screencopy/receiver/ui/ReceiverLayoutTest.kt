@@ -35,20 +35,19 @@ class ReceiverLayoutTest {
         }
     }
 
-    @Test fun settingsAndExitAreTheOnlyActionsAndNormalTextOmitsPortsAndRemovedControls() {
+    @Test fun exitIsTheOnlyHomeActionAndNormalTextOmitsPortsAndRemovedControls() {
         val layout = xml("res/layout/receiver_details.xml")
         val buttons = layout.getElementsByTagName("Button")
-        assertEquals(2, buttons.length)
+        assertEquals(1, buttons.length)
         val actions = (0 until buttons.length).map { buttons.item(it) as Element }
             .associateBy { it.getAttributeNS(android, "id") }
-        assertEquals(setOf("@+id/receiver_settings", "@+id/exit_receiver"), actions.keys)
+        assertEquals(setOf("@+id/exit_receiver"), actions.keys)
         actions.values.forEach { action ->
             assertEquals("true", action.getAttributeNS(android, "focusable"))
             assertEquals("56dp", action.getAttributeNS(android, "layout_height"))
             assertEquals("@drawable/exit_background", action.getAttributeNS(android, "background"))
         }
-        assertEquals("@id/exit_receiver", actions.getValue("@+id/receiver_settings").getAttributeNS(android, "nextFocusDown"))
-        assertEquals("@id/receiver_settings", actions.getValue("@+id/exit_receiver").getAttributeNS(android, "nextFocusUp"))
+        assertEquals("@id/waiting_content", actions.getValue("@+id/exit_receiver").getAttributeNS(android, "nextFocusUp"))
         val strings = xml("res/values/strings.xml").getElementsByTagName("string")
         val texts = (0 until strings.length).map { strings.item(it).textContent }
         listOf("Disconnect", "Licenses", "TCP port", "receiver name").forEach { removed ->

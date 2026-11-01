@@ -224,18 +224,16 @@ class AppUpdateRemoteUiLocalTest {
         open()
         assertEquals(1, backend.checks)
         val root = requireNotNull(ui.dialogViewForTests())
-        val update = find(root, "Update")
-        val retry = find(root, "Retry")
+        val update = find(root, "Download and install")
         val later = find(root, "Later")
         assertTrue(update.hasFocus())
-        assertSame(retry, update.focusSearch(View.FOCUS_DOWN))
-        assertTrue(retry.requestFocus())
-        assertSame(update, retry.focusSearch(View.FOCUS_UP))
-        assertSame(later, retry.focusSearch(View.FOCUS_DOWN))
+        assertSame(later, update.focusSearch(View.FOCUS_DOWN))
+        assertTrue(later.requestFocus())
+        assertSame(update, later.focusSearch(View.FOCUS_UP))
         assertNotNull(update.background)
         center(update)
         assertEquals(1, backend.downloads)
-        val cancel = find(root, "Cancel")
+        val cancel = find(root, "Later")
         assertTrue(cancel.hasFocus())
         center(cancel)
         assertFalse(backend.busy)
@@ -251,8 +249,7 @@ class AppUpdateRemoteUiLocalTest {
         assertEquals(0, installs.installs)
         ui.stop(); installs.allowed = true; ui.start(); ShadowLooper.idleMainLooper()
         assertTrue(backend.verified)
-        assertTrue(hasText(ui.dialogViewForTests(), "Install permission enabled"))
-        center(find(ui.dialogViewForTests(), "Install update"))
+        assertNull(ui.dialogViewForTests())
         assertEquals(1, installs.installs)
         val intent = requireNotNull(installs.intent)
         assertEquals("content", intent.data?.scheme)
@@ -280,11 +277,39 @@ class AppUpdateRemoteUiLocalTest {
         open()
         backend.status = "Update check/download failed. Check internet access and retry."; backend.emit()
         assertTrue(hasText(ui.dialogViewForTests(), "failed"))
-        center(find(ui.dialogViewForTests(), "Retry"))
+        center(find(ui.dialogViewForTests(), "Later"))
+        open()
         assertEquals(2, backend.checks)
         ui.stop(); backend.busy = false; backend.status = "Late callback"; backend.emit()
         assertNull(ui.dialogViewForTests())
     }
+    @Test fun twoButtonsDownloadVerifyAndInstallAfterOneExplicitClick() {
+        installs.allowed = true
+        open()
+        val root = requireNotNull(ui.dialogViewForTests())
+        assertEquals(2, countButtons(root))
+        center(find(root, "Download and install"))
+        assertTrue(backend.finishUpdateRequested)
+        assertEquals(1, backend.downloads)
+        assertEquals(0, installs.installs)
+        backend.verified = true; backend.busy = false; backend.emit()
+        assertEquals(1, installs.installs)
+        assertFalse(backend.finishUpdateRequested)
+        assertNull(ui.dialogViewForTests())
+    }
+    @Test fun laterCancelsConsentAndLateDownloadCannotLaunchInstaller() {
+        installs.allowed = true
+        open()
+        center(find(ui.dialogViewForTests(), "Download and install"))
+        center(find(ui.dialogViewForTests(), "Later"))
+        backend.verified = true; backend.busy = false; backend.emit()
+        assertEquals(0, installs.installs)
+        assertFalse(backend.finishUpdateRequested)
+        assertNull(ui.dialogViewForTests())
+    }
+    private fun countButtons(view: View): Int = if (!view.isShown) 0 else if (view is Button) 1
+        else if (view is ViewGroup) (0 until view.childCount).sumOf { countButtons(view.getChildAt(it)) }
+        else 0
     @Test fun androidCancellationAndFailureResultsOfferExplicitRetry() {
         backend.verified = true; installs.allowed = true
         open(); center(find(ui.dialogViewForTests(), "Install"))
@@ -358,7 +383,8 @@ class AppUpdateRemoteUiLocalTest {
         center(find(ui.dialogViewForTests(), "Retry installation"))
         backend.reportedVersion = requireNotNull(backend.release).versionCode.toLong()
         result(Activity.RESULT_OK)
-        assertTrue(hasText(ui.dialogViewForTests(), "Update installed"))
+        assertTrue(backend.displayStatus().contains("Update installed"))
+        assertNull(ui.dialogViewForTests())
     }
     @Test fun resultOkWithChangedVersionButDifferentCurrentSignerIsUnconfirmed() {
         backend.verified = true; installs.allowed = true
@@ -379,15 +405,16 @@ class AppUpdateRemoteUiLocalTest {
         ui.stop()
         installs.allowed = true
         ui.start()
+        assertEquals(1, installs.installs)
+        assertNull(ui.dialogViewForTests())
+        ui.resume()
         val replacement = requireNotNull(ui.dialogViewForTests())
         assertNotSame(oldRoot, replacement)
         ShadowLooper.idleMainLooper()
         assertSame(replacement, ui.dialogViewForTests())
-        assertTrue(hasText(replacement, "Install permission enabled"))
+        assertTrue(hasText(replacement, "has not been confirmed"))
         assertTrue(backend.verified)
         assertTrue(backend.apk.isFile)
-        assertEquals(0, installs.installs)
-        center(find(replacement, "Install update"))
         assertEquals(1, installs.installs)
         val intent = requireNotNull(installs.intent)
         assertEquals("content", intent.data?.scheme)

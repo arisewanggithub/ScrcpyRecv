@@ -12,7 +12,7 @@ internal class ReceiverScreenView(root: View, exit: () -> Unit) {
     private val addresses = root.findViewById<TextView>(R.id.receiver_addresses)
     private val error = root.findViewById<TextView>(R.id.error_message)
     private val exitButton = root.findViewById<Button>(R.id.exit_receiver)
-    private val settingsButton = root.findViewById<Button>(R.id.receiver_settings)
+    private val home = root.findViewById<View>(R.id.waiting_content)
     private var wasWaiting = false
 
     init {
@@ -94,11 +94,10 @@ internal class ReceiverScreenView(root: View, exit: () -> Unit) {
             error.text = error.context.getString(R.string.problem_queue, track, limit)
         }
         exitButton.isEnabled = state.canExit
-        settingsButton.isEnabled = state.canExit
-        if (state.showWaiting && !wasWaiting && state.canExit) settingsButton.requestFocus()
+        if (state.showWaiting && !wasWaiting) home.requestFocus()
         if (!state.showWaiting) {
             exitButton.clearFocus()
-            settingsButton.clearFocus()
+            home.clearFocus()
         }
         wasWaiting = state.showWaiting
     }

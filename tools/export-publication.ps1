@@ -4,6 +4,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $candidates = @(& git -C $root -c core.quotePath=false ls-files --cached --others --exclude-standard)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate the current Git snapshot' }
 $required = @('.gitignore', '.github/workflows/build-release.yml', 'gradlew', 'gradlew.bat',
+    'tools/pr-validation.ps1',
     'gradle/wrapper/gradle-wrapper.jar', 'gradle/wrapper/gradle-wrapper.properties',
     'release-check/src/main/AndroidManifest.xml', 'release-check/proguard-rules.pro',
     'release-check/src/main/java/dev/scrcpy/releasecheck/NativeSrtCheck.kt')

@@ -24,7 +24,7 @@ reject() {
   [[ -s "$scratch/diagnostic.txt" ]] || { echo "FAIL parser gave no diagnostic: $name" >&2; exit 1; }
   cases=$((cases+1))
 }
-for expected in 8 6; do
+for expected in 8 6 14 104; do
   emit_success "$expected" > "$scratch/valid.txt"
   bash "$checker" "$scratch/valid.txt" "$expected" > /dev/null
   cases=$((cases+1))
@@ -44,10 +44,14 @@ for expected in 8 6; do
   reject missing-success "$scratch/bad.txt" "$expected"
   sed 's/INSTRUMENTATION_STATUS: current=2$/INSTRUMENTATION_STATUS: current=1/' "$scratch/valid.txt" > "$scratch/bad.txt"
   reject balanced-duplicate-and-missing-index "$scratch/bad.txt" "$expected"
+  sed "s/INSTRUMENTATION_STATUS: current=2$/INSTRUMENTATION_STATUS: current=$((expected+1))/" "$scratch/valid.txt" > "$scratch/bad.txt"
+  reject out-of-range-index "$scratch/bad.txt" "$expected"
+  sed "s/INSTRUMENTATION_STATUS: numtests=$expected$/INSTRUMENTATION_STATUS: numtests=${expected}x/" "$scratch/valid.txt" > "$scratch/bad.txt"
+  reject non-integer-total "$scratch/bad.txt" "$expected"
   cp "$scratch/valid.txt" "$scratch/bad.txt"
   printf 'INSTRUMENTATION_CODE: -1\n' >> "$scratch/bad.txt"
   reject duplicated-final "$scratch/bad.txt" "$expected"
   sed 's/INSTRUMENTATION_CODE: -1$/INSTRUMENTATION_CODE: 0/' "$scratch/valid.txt" > "$scratch/bad.txt"
   reject final-abort "$scratch/bad.txt" "$expected"
 done
-echo "PASS instrumentation result parser: $cases fixtures (8/6 counts, CRLF, skips/failures/crash/incomplete/duplicate rejection)"
+echo "PASS instrumentation result parser: $cases fixtures (6/8/14/104 counts, CRLF, skips/failures/crash/incomplete/duplicate rejection)"

@@ -21,6 +21,14 @@ foreach ($entry in $inventory.files) {
     Assert ($entry.path -notmatch '(^|/)(\.git|build|\.gradle|\.idea|\.vscode|\.copilot|node_modules)(/|$)|local\.properties$|\.(apk|jks|keystore)$') 'Forbidden snapshot path'
 }
 $workflow = Get-Content -LiteralPath (Join-Path $root '.github/workflows/build-release.yml') -Raw
+& (Join-Path $PSScriptRoot 'pr-validation.ps1') -Mode SelfTest
+foreach ($job in @('checks', 'update-ui', 'optimized-native-smoke', 'record-validation')) {
+    Assert ($workflow -match "(?m)^  ${job}:\r?\n    (?:name:[^\r\n]*\r?\n    )?if: github.event_name == 'pull_request'") 'Full validation and proof generation must run only on PRs'
+}
+Assert ($workflow -match 'retention-days: 90' -and $workflow -match 'pr-validation.ps1 -Mode Record') 'Successful PR source proof must be retained'
+Assert ($workflow -match 'fetch-depth: 0' -and $workflow -match 'pr-validation.ps1 -Mode Locate' -and $workflow -match 'pr-validation.ps1 -Mode Verify') 'Release must verify a merged-main PR and identical tested tree'
+Assert ($workflow -match 'artifact-ids: \$\{\{ steps.validation.outputs.artifact_id \}\}' -and $workflow -match 'actions: read') 'Proof download must select the verified artifact with read-only permissions'
+Assert ($workflow -match 'pull-requests: read') 'Release validation must read the associated merged PR without write permissions'
 $appBuild = Get-Content -LiteralPath (Join-Path $root 'app/build.gradle.kts') -Raw
 $releaseBlock = [regex]::Match($appBuild, '(?s)buildTypes\s*\{\s*getByName\("release"\)\s*\{(?<body>.*?)\}')
 Assert $releaseBlock.Success 'Explicit release build type missing'
@@ -90,7 +98,7 @@ Assert ($workflow -notmatch 'pull_request_target|connectedAndroidTest|adb connec
 Assert ($workflow -match "srt: \['false', 'true'\]") 'Both transport build modes must be checked'
 Assert ($workflow -match 'requireReleaseSigning=true') 'Publication signing guard missing'
 Assert ($workflow -match '-e class dev\.scrcpy\.update\.AppUpdateRemoteUiTest ') 'Only the agreed remote UI instrumentation class may run'
-Assert ($workflow -match 'needs: \[checks, update-ui, optimized-native-smoke\]') 'Release must wait for all test jobs'
+Assert ($workflow -match '(?m)^  publish:\r?\n    needs: \[verify-validation\]') 'Release must depend on verified PR evidence, not repeat PR jobs'
 Assert ($workflow -match 'protocolVersion' -or (Get-Content (Join-Path $PSScriptRoot 'make-update-manifest.ps1') -Raw) -match 'protocolVersion = 3') 'Manifest protocol missing'
 Assert ($workflow -match 'if: always\(\)') 'Keystore cleanup must run on failure'
 Assert ($workflow.IndexOf('name: Build unsigned-development app and UI test APKs') -lt $workflow.IndexOf('name: Run only AppUpdateRemoteUiTest')) 'APK compilation must precede emulator launch'

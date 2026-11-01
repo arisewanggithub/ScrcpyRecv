@@ -29,7 +29,8 @@ function reject(message) {
 /^INSTRUMENTATION_STATUS_CODE: / {
   code = substr($0, index($0, ":") + 2)
   key = class SUBSEP test
-  if (current !~ /^[1-9][0-9]*$/ || current > expected || total != expected || class == "" || test == "") {
+  # substr metadata is string-valued; numeric limits matter for cohorts >= 10.
+  if (current !~ /^[1-9][0-9]*$/ || total !~ /^[1-9][0-9]*$/ || (current + 0) > (expected + 0) || (total + 0) != (expected + 0) || class == "" || test == "") {
     reject("missing or inconsistent per-test metadata")
   } else if (code == "1") {
     if (started[current] || names[key]) reject("duplicate test start/index")

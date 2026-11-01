@@ -62,9 +62,10 @@ window/cutout insets and overscan-safe margins. Playback is aspect-fit and
 letterboxed rather than stretched or cropped again. The visible Activity stays
 awake; it does not change system power or keyguard settings.
 
-Initial remote focus is **Settings**, so the first OK does not accidentally
-activate Exit. Update checks run once per fresh launch without adding controls
-to the landscape address/status row; manual checking is available in Settings.
+Home shows the installed app version and initially focuses passive content, so
+the first remote OK does not accidentally activate Exit. Updates are checked
+silently once per fresh launch; only a newer version shows a two-action popup.
+There is no receiver Settings button.
 
 The sender may request receiver orientation `auto`, `landscape` or `portrait`
 for a session. It affects presentation only, not capture dimensions, media
@@ -113,7 +114,7 @@ The optional `.\tools\interop.ps1 -SenderRoot ..\ScrcpySend` reads sender
 sources without building/writing that checkout; `SCRCPY_SEND_ROOT` can
 override the sibling default.
 
-CI runs JVM tests, lint, debug builds and unsigned optimized release assembly
+PR CI runs JVM tests, lint, debug builds and unsigned optimized release assembly
 in both profiles. Release assembly runs R8/resource shrinking before the
 publisher can use signing secrets; it does not prove runtime compatibility.
 Its disposable Linux
